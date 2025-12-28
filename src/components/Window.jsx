@@ -17,6 +17,7 @@ export default function Window(props) {
 		onBringToFront,
 		onMinimize,
 		isMinimized=false,
+		showControls = true,
 	} = props;
 
 	const windowRef = useRef(null);
@@ -346,14 +347,16 @@ export default function Window(props) {
 				style={{ cursor: isMaximized ? 'default' : 'move', userSelect: 'none' }}
 			>
 				<div className="title-bar-text">{title}</div>
-				<div className="title-bar-controls">
-					<button aria-label="Minimize" onClick={handleMinimize}></button>
-					<button 
-						aria-label={isMaximized ? "Restore" : "Maximize"} 
-						onClick={handleMaximizeRestore}
-					></button>
-					<button aria-label="Close" onClick={handleClose}></button>
-				</div>
+				{showControls && (
+					<div className="title-bar-controls">
+						<button aria-label="Minimize" onClick={handleMinimize}></button>
+						<button 
+							aria-label={isMaximized ? "Restore" : "Maximize"} 
+							onClick={handleMaximizeRestore}
+						></button>
+						<button aria-label="Close" onClick={handleClose}></button>
+					</div>
+				)}
 			</div>
 
 			{/* Window children */}

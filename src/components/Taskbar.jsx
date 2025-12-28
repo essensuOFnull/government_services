@@ -15,6 +15,12 @@ return (
 			</button>
 		))}
 	</div>
+  <button
+    onClick={props.onProfileClick}
+    style={{marginLeft:'auto',marginRight:'16px'}}
+  >
+    Профиль
+  </button>
 	</footer>
 );
 }
