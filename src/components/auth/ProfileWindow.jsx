@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useAuthContext } from './AuthContext';
+import { useWindowsManager } from '../../hooks/useWindowsManager';
 
-const ProfileWindow = () => {
+const ProfileWindow = ({ onClose }) => {
   const { 
     user, 
     logout, 
@@ -9,6 +10,7 @@ const ProfileWindow = () => {
     changePassword,
     loading 
   } = useAuthContext();
+  const { closeAllWindows } = useWindowsManager();
   
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -58,6 +60,11 @@ const ProfileWindow = () => {
     } else {
       setError(result.message);
     }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    closeAllWindows();
   };
 
   if (!user) {
@@ -203,7 +210,7 @@ const ProfileWindow = () => {
 
       <div>
         <button 
-          onClick={logout}
+          onClick={handleLogout}
           style={{
             padding: '10px 20px',
             backgroundColor: '#d13438',

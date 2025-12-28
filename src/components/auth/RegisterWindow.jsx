@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { useAuthContext } from './AuthContext';
+import { useWindowsManager } from '../../hooks/useWindowsManager';
+import LoginWindow from './LoginWindow';
 
-const RegisterWindow = ({ onLoginClick }) => {
+const RegisterWindow = ({ onClose }) => {
   const { register, error, loading } = useAuthContext();
+  const { openWindow, closeWindow } = useWindowsManager();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -50,6 +53,14 @@ const RegisterWindow = ({ onLoginClick }) => {
     if (!result.success) {
       setLocalError(result.message);
     }
+  };
+
+  const handleLoginClick = () => {
+    if (onClose) onClose();
+    openWindow({
+      title: 'Вход',
+      children: <LoginWindow />,
+    });
   };
 
   return (
@@ -163,7 +174,7 @@ const RegisterWindow = ({ onLoginClick }) => {
           <span style={{ marginRight: '5px' }}>Уже есть аккаунт?</span>
           <button 
             type="button"
-            onClick={onLoginClick}
+            onClick={handleLoginClick}
             style={{
               background: 'none',
               border: 'none',

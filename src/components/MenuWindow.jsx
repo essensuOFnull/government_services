@@ -1,5 +1,5 @@
 import Window from './Window';
-export default function MenuWindow(props) {
+export default function MenuWindow() {
 	const group_link="https://t.me/c/3601903002";
 	const threads_id={
 		ПРКПН:4,
@@ -27,7 +27,7 @@ export default function MenuWindow(props) {
 	}
 	const other="Я подтверждаю, что, находясь в здравом уме и трезвой памяти, просмотрел полный перечень предоставляемых запросов и НЕ нашел подходящий под мои нужды.";
 	return(
-		<Window title="Меню услуг">
+		<>
 			<menu role="tablist">
 				<li role="tab" aria-selected="true"><a>Мессенджер</a></li>
 				<li role="tab"><a>Хранилище</a></li>
@@ -219,6 +219,6 @@ export default function MenuWindow(props) {
 					</ul>
 				</div>
 			</div>
-		</Window>
+		</>
 	)
 }

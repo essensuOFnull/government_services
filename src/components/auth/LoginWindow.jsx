@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { useAuthContext } from './AuthContext';
+import { useWindowsManager } from '../../hooks/useWindowsManager';
+import RegisterWindow from './RegisterWindow';
 
-const LoginWindow = ({ onRegisterClick }) => {
+export default function LoginWindow({ onClose }) {
   const { login, error, loading } = useAuthContext();
+  const { openWindow, closeWindow } = useWindowsManager();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState('');
@@ -22,91 +25,63 @@ const LoginWindow = ({ onRegisterClick }) => {
     }
   };
 
+  const handleRegisterClick = () => {
+    if (onClose) onClose();
+    openWindow({
+      title: 'Регистрация',
+      children: <RegisterWindow />,
+    });
+  };
+
   return (
-    <div style={{ padding: '20px' }}>
-      <h2 style={{ marginBottom: '20px' }}>Вход</h2>
+    <form onSubmit={handleSubmit} style={{ textAlign: 'center' }}>
       {(error || localError) && (
         <div style={{ 
           color: '#d13438', 
-          marginBottom: '10px',
-          padding: '10px',
-          backgroundColor: '#fde7e9',
-          borderRadius: '4px'
         }}>
           {error || localError}
         </div>
       )}
-      <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '15px' }}>
-          <label style={{ display: 'block', marginBottom: '5px' }}>Имя пользователя:</label>
+      <div className='status-field-border' style={{padding:'16px'}}>
+        <p><b>Вход</b></p>
+        <div className='status-field-border' style={{padding:'16px'}}>
+          <label>Имя пользователя:</label>
+          <br/><br/>
           <input
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              boxSizing: 'border-box'
-            }}
             required
             disabled={loading}
           />
         </div>
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', marginBottom: '5px' }}>Пароль:</label>
+        <br/>
+        <div className='status-field-border' style={{padding:'16px'}}>
+          <label>Пароль:</label>
+          <br/><br/>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              boxSizing: 'border-box'
-            }}
             required
             disabled={loading}
           />
         </div>
+        <br/>
         <button 
           type="submit"
-          style={{
-            width: '100%',
-            padding: '10px',
-            backgroundColor: '#0078d4',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            marginBottom: '15px'
-          }}
           disabled={loading}
         >
           {loading ? 'Вход...' : 'Войти'}
         </button>
-        
-        <div style={{ textAlign: 'center' }}>
-          <span style={{ marginRight: '5px' }}>Нет аккаунта?</span>
-          <button 
-            type="button"
-            onClick={onRegisterClick}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#0078d4',
-              cursor: 'pointer',
-              textDecoration: 'underline'
-            }}
-          >
-            Зарегистрироваться
-          </button>
-        </div>
-      </form>
-    </div>
+      </div>
+      <p>Нет аккаунта?</p>
+      <button 
+        type="button"
+        onClick={handleRegisterClick}
+      >
+        Зарегистрироваться
+      </button>
+    </form>
   );
-};
-
-export default LoginWindow;
+}
