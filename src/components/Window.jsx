@@ -74,10 +74,8 @@ export default function Window(props) {
 					tabPanelElements.forEach((panel, panelIndex) => {
 						if (panelIndex === index) {
 							panel.style.display = 'block';
-							panel.style.visibility = 'visible';
 						} else {
 							panel.style.display = 'none';
-							panel.style.visibility = 'hidden';
 						}
 					});
 				});
