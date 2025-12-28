@@ -4,8 +4,8 @@ export default function Window(props) {
 	const {
 		id,
 		title = 'Окно',
-		width = 400,
-		height = 300,
+		width = Math.floor(window.innerWidth/3*2),
+		height = Math.floor(window.innerHeight/3*2),
 		children,
 		isMaximized: initialMaximized = false,
 		position: initialPosition = { x: 100, y: 100 },
