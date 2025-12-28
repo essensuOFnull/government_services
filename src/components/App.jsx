@@ -52,7 +52,7 @@ export default function App() {
 	}, []);
 	return (
 		<>
-			{windows.map(window => !window.isMinimized && (
+			{windows.map(window => (
 				<Window
 					key={window.id}
 					id={window.id}
@@ -68,6 +68,7 @@ export default function App() {
 					onUpdate={(updates) => updateWindow(window.id, updates)}
 					onBringToFront={() => bringToFront(window.id)}
 					onMinimize={() => minimizeWindow(window.id)}
+					isMinimized={window.isMinimized}
 				>
 					{window.children}
 				</Window>

@@ -15,7 +15,8 @@ export default function Window(props) {
 		onClose,
 		onUpdate,
 		onBringToFront,
-		onMinimize
+		onMinimize,
+		isMinimized=false,
 	} = props;
 
 	const windowRef = useRef(null);
@@ -334,7 +335,7 @@ export default function Window(props) {
 				height: `${size.height}px`,
 				zIndex: zIndex,
 				cursor: isDragging ? 'move' : 'default',
-				display:'flex',
+				display:isMinimized?'none':'flex',
 				flexDirection:'column'
 			}}
 			onClick={handleWindowClick}
