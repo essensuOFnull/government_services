@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 
 export default function Window(props) {
 	const {
@@ -20,6 +20,8 @@ export default function Window(props) {
 
 	const windowRef = useRef(null);
 	const titleBarRef = useRef(null);
+	const tabListRef = useRef(null);
+	const tabsContentRef = useRef(null);
 	
 	const [isDragging, setIsDragging] = useState(false);
 	const [isResizing, setIsResizing] = useState(false);
@@ -31,6 +33,96 @@ export default function Window(props) {
 	const [originalSize, setOriginalSize] = useState(initialOriginalSize || { width, height });
 	const [originalPosition, setOriginalPosition] = useState(initialOriginalPosition || initialPosition);
 	const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0 });
+	
+	// Состояние для управления вкладками
+	const [activeTabIndex, setActiveTabIndex] = useState(0);
+	const [tabs, setTabs] = useState([]);
+	const [tabPanels, setTabPanels] = useState([]);
+
+	// Инициализация вкладок из children
+	useEffect(() => {
+		if (!windowRef.current) return;
+
+		const container = windowRef.current;
+		
+		// Находим все элементы с ролью tablist
+		const tabLists = container.querySelectorAll('[role="tablist"]');
+		
+		tabLists.forEach((tabList, listIndex) => {
+			// Находим вкладки и панели
+			const tabElements = tabList.querySelectorAll('[role="tab"]');
+			const tabPanelElements = container.querySelectorAll('[role="tabpanel"]');
+			
+			// Устанавливаем href для вкладок
+			tabElements.forEach((tab, tabIndex) => {
+				tab.setAttribute('href', `#${id}-tab-${listIndex}-${tabIndex}`);
+				tab.setAttribute('aria-selected', tabIndex === 0 ? 'true' : 'false');
+				
+				// Добавляем обработчик клика
+				tab.addEventListener('click', (e) => {
+					e.preventDefault();
+					const index = Array.from(tabElements).indexOf(e.currentTarget);
+					setActiveTabIndex(index);
+					
+					// Обновляем состояние всех вкладок
+					tabElements.forEach((t, i) => {
+						t.setAttribute('aria-selected', i === index ? 'true' : 'false');
+					});
+					
+					// Обновляем видимость панелей
+					tabPanelElements.forEach((panel, panelIndex) => {
+						if (panelIndex === index) {
+							panel.style.display = 'block';
+							panel.style.visibility = 'visible';
+						} else {
+							panel.style.display = 'none';
+							panel.style.visibility = 'hidden';
+						}
+					});
+				});
+			});
+			
+			// Устанавливаем id для панелей и управляем их видимостью
+			tabPanelElements.forEach((panel, panelIndex) => {
+				panel.id = `${id}-tab-${listIndex}-${panelIndex}`;
+				if (panelIndex === 0) {
+					panel.style.display = 'block';
+					panel.style.visibility = 'visible';
+				} else {
+					panel.style.display = 'none';
+					panel.style.visibility = 'hidden';
+				}
+			});
+		});
+		
+		// Очистка обработчиков при размонтировании
+		return () => {
+			tabLists.forEach(tabList => {
+				const tabElements = tabList.querySelectorAll('[role="tab"]');
+				tabElements.forEach(tab => {
+					tab.replaceWith(tab.cloneNode(true));
+				});
+			});
+		};
+	}, [id, children]);
+
+	// Обновляем видимость панелей при изменении activeTabIndex
+	useEffect(() => {
+		if (!windowRef.current) return;
+
+		const container = windowRef.current;
+		const tabPanelElements = container.querySelectorAll('[role="tabpanel"]');
+		
+		tabPanelElements.forEach((panel, panelIndex) => {
+			if (panelIndex === activeTabIndex) {
+				panel.style.display = 'block';
+				panel.style.visibility = 'visible';
+			} else {
+				panel.style.display = 'none';
+				panel.style.visibility = 'hidden';
+			}
+		});
+	}, [activeTabIndex]);
 
 	// Синхронизация с props
 	useEffect(() => {
@@ -266,7 +358,19 @@ export default function Window(props) {
 			</div>
 
 			{/* Window children */}
-			<div className="window-body" style={{overflow: 'auto',maxWidth:'100%',maxHeight:'100%',boxSizing:'border-box',minWidth:'0',minHeight:'0',flexGrow:1}}>
+			<div 
+				className="window-body" 
+				style={{
+					overflow: 'auto',
+					maxWidth:'100%',
+					maxHeight:'100%',
+					boxSizing:'border-box',
+					minWidth:'0',
+					minHeight:'0',
+					flexGrow:1,
+					position: 'relative'
+				}}
+			>
 				{children}
 			</div>
 
