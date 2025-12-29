@@ -2,21 +2,38 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
+const fs = require('fs');
 const auth = require('./auth-middleware');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 22869;
+const isDev = process.env.NODE_ENV !== 'production';
 
-// Middleware безопасности
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
-    },
-  },
-}));
+// Middleware безопасности — более мягкая политика в dev для работы Vite HMR
+if (isDev) {
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        // разрешаем соединения к Vite HMR websocket (порт будет в vite.config.js)
+        connectSrc: ["'self'", "ws://localhost:24678", "ws://127.0.0.1:24678", "http://localhost:22869"]
+      }
+    }
+  }));
+} else {
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"]
+      }
+    }
+  }));
+}
 
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:22869',
@@ -167,6 +184,87 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Сервер запущен на порту ${PORT}`);
-});
+// Инициализируем сервер
+async function start() {
+  try {
+    if (isDev) {
+      // В режиме разработки подключаем Vite middleware
+      const { createServer: createViteServer } = require('vite');
+      const viteServer = await createViteServer({
+        root: path.resolve(__dirname, '..'),
+        server: { middlewareMode: true },
+        appType: 'spa'
+      });
+      
+      console.log('📦 Vite сервер инициализирован');
+      
+      // Добавляем логирование ПЕРЕД Vite для отладки
+      app.use((req, res, next) => {
+        console.log(`⬜ До Vite middleware: ${req.method} ${req.path}`);
+        next();
+      });
+      
+      // Подключаем Vite middleware
+      app.use(viteServer.middlewares);
+      
+      // Логирование ПОСЛЕ Vite
+      app.use((req, res, next) => {
+        console.log(`⬛ После Vite middleware: ${req.method} ${req.path}`);
+        next();
+      });
+      
+      // SPA fallback
+      app.use('*', async (req, res) => {
+        const path_url = req.path;
+        console.log(`📍 Вошли в SPA fallback для: ${path_url}`);
+        
+        // Проверяем, не является ли это API запросом или статическим файлом
+        
+        // Пропускаем если это выглядит как файл (имеет расширение)
+        if (/\.\w+$/.test(path_url)) {
+          console.log(`⏭️  Пропуск файла: ${path_url}`);
+          return res.status(404).end('Not found');
+        }
+        
+        // Это маршрут приложения - отдаём index.html
+        console.log(`🔄 SPA fallback для маршрута: ${path_url}`);
+        
+        try {
+          const htmlPath = path.resolve(__dirname, '../index.html');
+          console.log(`📄 Читаю index.html из: ${htmlPath}`);
+          
+          let html = fs.readFileSync(htmlPath, 'utf-8');
+          html = await viteServer.transformIndexHtml(path_url, html);
+          
+          res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+        } catch (e) {
+          console.error('❌ Ошибка в SPA fallback:', e.message);
+          viteServer.ssrFixStacktrace(e);
+          res.status(500).end(`Error: ${e.message}`);
+        }
+      });
+    } else {
+      // В режиме production отдаём статические файлы
+      app.use(express.static(path.resolve(__dirname, 'public')));
+      
+      // SPA fallback для всех остальных маршрутов
+      app.use('*', (req, res) => {
+        res.sendFile(path.resolve(__dirname, 'public', 'index.html'));
+      });
+    }
+    
+    app.listen(PORT, () => {
+      console.log(`Сервер запущен на http://localhost:${PORT}`);
+      if (isDev) {
+        console.log(`📝 Режим разработки (Vite middleware активен)`);
+      } else {
+        console.log(`🚀 Режим production (отдача статических файлов)`);
+      }
+    });
+  } catch (error) {
+    console.error('Ошибка при запуске сервера:', error);
+    process.exit(1);
+  }
+}
+
+start();

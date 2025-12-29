@@ -1,31 +1,48 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+// In development, force relative API path so requests go to same origin (Vite middleware)
+const API_BASE_URL = (import.meta.env.MODE === 'development')
+  ? '/api'
+  : (import.meta.env.VITE_API_URL || '/api');
 
 export const api = {
   async request(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
+    console.log(`API request -> ${options.method || 'GET'} ${url}`);
     const defaultOptions = {
       headers: {
         'Content-Type': 'application/json',
       },
       credentials: 'include'
     };
+    try {
+      const response = await fetch(url, {
+        ...defaultOptions,
+        ...options,
+        headers: {
+          ...defaultOptions.headers,
+          ...options.headers,
+        },
+      });
 
-    const response = await fetch(url, {
-      ...defaultOptions,
-      ...options,
-      headers: {
-        ...defaultOptions.headers,
-        ...options.headers,
-      },
-    });
+      let data;
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        data = await response.text();
+      }
 
-    const data = await response.json();
+      console.log(`API response <- ${response.status} ${url}` , data);
 
-    if (!response.ok) {
-      throw new Error(data.message || 'Ошибка сети');
+      if (!response.ok) {
+        const msg = (data && data.message) ? data.message : `HTTP ${response.status}`;
+        throw new Error(msg || 'Ошибка сети');
+      }
+
+      return data;
+    } catch (err) {
+      console.error(`API request error -> ${url}`, err);
+      throw err;
     }
-
-    return data;
   },
 
   // Методы API
