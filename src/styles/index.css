@@ -1,5 +1,11 @@
+@font-face {
+  font-family: "CODERROR16x16GNUUnifont";
+  src: url("../fonts/CODERROR16x16GNUUnifont.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
 *{
-		--spacing-base: 4px;
+	--spacing-base: 4px;
 	--spacing-1: calc(var(--spacing-base) * .5);
 	--spacing-2: calc(var(--spacing-base));
 	--spacing-3: calc(var(--spacing-base) * 2);
@@ -49,9 +55,12 @@
 	--shadow-icon-button-focused: var(--shadow-outer-4);
 	--shadow-icon-button-disabled: var(--shadow-outer-4);
 	--shadow-input: var(--shadow-inner-4);
+
+	font-family:"CODERROR16x16GNUUnifont";
+	font-size:16px
 }
 body{
-		background:#008080;
+	background:#008080;
 }
 .taskbar{
 	background-color: var(--color-gray-200);
