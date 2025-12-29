@@ -3,8 +3,7 @@ import Taskbar from './Taskbar';
 import Window from './Window';
 import { AuthProvider, useAuthContext } from './auth/AuthContext';
 import { WindowsProvider, useWindowsManager } from '../hooks/useWindowsManager';
-import LoginWindow from './auth/LoginWindow';
-import RegisterWindow from './auth/RegisterWindow';
+import AuthorizationWindow from './auth/AuthorizationWindow';
 import ProfileWindow from './auth/ProfileWindow';
 import MenuWindow from './MenuWindow';
 
@@ -16,17 +15,17 @@ function MainApp() {
   useEffect(() => {
     if (!loading && !isAuthenticated) {
       // Если нет окна входа, открываем его
-      if (!windows.some(w => w.type === 'login')) {
+      if (!windows.some(w => w.type === 'authorization')) {
         openWindow({
-          type: 'login',
-          title: 'Вход',
-          children: <LoginWindow />,
+          type: 'authorization',
+          title: 'Авторизация',
+          children: <AuthorizationWindow />,
         });
       }
     } else if (!loading && isAuthenticated) {
       // Закрываем окна авторизации при входе
       windows.forEach(w => {
-        if (w.type === 'login' || w.type === 'register') {
+        if (w.type === 'authorization') {
           closeWindow(w.id);
         }
       });
