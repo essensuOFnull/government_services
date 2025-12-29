@@ -14,3 +14,11 @@ The React Compiler is not enabled on this template because of its impact on dev 
 ## Expanding the ESLint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+## Install & run
+
+- **Install dependencies:** run `npm install` in the project root. This will install all dependencies into a single `node_modules` folder.
+- **Development (backend):** run `npm run dev` to start the backend server (server is at `backend/server.cjs`).
+- **Production:** run `npm run start:prod` or `npm run start` to start the server in production mode.
+
+Having a single `package.json` in the project root ensures one `node_modules` folder and simple `npm install` from a fresh clone.

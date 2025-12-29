@@ -1,7 +1,7 @@
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
-const db = require('./database');
-const rateLimiter = require('./rate-limiter');
+const db = require('./database.cjs');
+const rateLimiter = require('./rate-limiter.cjs');
 
 class AuthMiddleware {
   constructor() {

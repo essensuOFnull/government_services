@@ -10,5 +10,6 @@ echo.
 echo Starting server on http://localhost:22869
 echo Press Ctrl+C to stop the server
 echo.
-node server.js
+rem node server.js
+node server.cjs
 pause

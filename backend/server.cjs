@@ -4,7 +4,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
-const auth = require('./auth-middleware');
+const auth = require('./auth-middleware.cjs');
 
 const app = express();
 const PORT = process.env.PORT || 22869;
