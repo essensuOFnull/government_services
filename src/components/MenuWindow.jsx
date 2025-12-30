@@ -1,9 +1,11 @@
 import Window from './Window';
 import { useState } from 'react';
 import Messenger from './Messenger';
+import { useWindowsManager } from '../hooks/useWindowsManager';
 
 export default function MenuWindow({ userId }) {
 	const [activeTab, setActiveTab] = useState(0);
+	const { openWindow } = useWindowsManager();
 	const group_link="https://t.me/c/3601903002";
 	const threads_id={
 		ПРКПН:4,
@@ -39,9 +41,14 @@ export default function MenuWindow({ userId }) {
 			</menu>
 			<div className="window" role="tabpanel" style={{ display: activeTab === 0 ? 'block' : 'none' }}>
 				<div className="window-body">
-					{activeTab === 'messenger' && (
+					<div style={{ marginBottom: 8 }}>
+						<button onClick={() => openWindow({ title: 'Мессенджер', children: <Messenger userId={userId} /> })}>
+							Открыть мессенджер в окне
+						</button>
+					</div>
+					{activeTab === 0 && (
 						<div style={{ padding: 8 }}>
-							<Messenger userId={userId} />
+							<p>Нажмите кнопку выше, чтобы открыть мессенджер в отдельном окне.</p>
 						</div>
 					)}
 				</div>
