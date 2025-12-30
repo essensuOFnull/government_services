@@ -170,23 +170,22 @@ class StorageManager {
   // Функция получения свободного места на диске
   getServerFreeSpace() {
     try {
-      const execSync = require('child_process').execSync;
-      let cmd;
-
-      if (process.platform === 'win32') {
-        // Для Windows: получаем свободное место на диске D: (или можно указать другой диск)
-        cmd = `powershell -NoProfile -Command "[System.IO.DriveInfo]::GetDrives() | Where-Object {$_.Name -eq 'C:\\\\'} | Select-Object -ExpandProperty AvailableFreeSpace"`;
-      } else {
-        // Для Linux/Mac
-        cmd = `df / | tail -1 | awk '{print $4 * 1024}'`;
+      const checkDiskSpace = require('check-disk-space').default;
+      const path = process.env.UPLOAD_DIR || 'C:/government_services/data';
+      
+      // Синхронный способ через fs.statfsSync (доступен в Node.js)
+      const fs = require('fs');
+      if (fs.statfsSync) {
+        const stats = fs.statfsSync(path);
+        const freeSpace = stats.bavail * stats.bsize; // доступное свободное место в байтах
+        return freeSpace;
       }
-
-      const result = execSync(cmd, { encoding: 'utf-8' }).trim();
-      const freeSpace = parseInt(result) || 0;
-      return freeSpace;
+      
+      // Fallback: вернуть большое значение если не удалось определить
+      return 100 * 1024 * 1024 * 1024; // 100GB по умолчанию
     } catch (error) {
       console.error('Ошибка получения свободного места на диске:', error);
-      return 0;
+      return 100 * 1024 * 1024 * 1024; // 100GB fallback
     }
   }
 
