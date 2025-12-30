@@ -86,10 +86,10 @@ const ProfileWindow = ({ onClose }) => {
   };
 
   return (
-    <div style={{ padding: '20px' }}>
-      <h2 style={{ marginBottom: '20px' }}>Профиль пользователя</h2>
+    <div style={{ textAlign: 'center' }}>
+      <p><strong>Профиль пользователя</strong></p>
       
-      <div style={{ marginBottom: '30px', backgroundColor: '#f3f2f1', padding: '15px', borderRadius: '4px' }}>
+      <div className='window' style={{padding:'16px'}}>
         <p><strong>ID:</strong> {user.userId}</p>
         <p><strong>Имя пользователя:</strong> {user.username}</p>
         <p><strong>Роль:</strong> {getRoleName(user.role)}</p>
@@ -100,10 +100,6 @@ const ProfileWindow = ({ onClose }) => {
       {message && (
         <div style={{ 
           color: '#107c10', 
-          marginBottom: '15px',
-          padding: '10px',
-          backgroundColor: '#dff6dd',
-          borderRadius: '4px'
         }}>
           {message}
         </div>
@@ -112,119 +108,63 @@ const ProfileWindow = ({ onClose }) => {
       {error && (
         <div style={{ 
           color: '#d13438', 
-          marginBottom: '15px',
-          padding: '10px',
-          backgroundColor: '#fde7e9',
-          borderRadius: '4px'
         }}>
           {error}
         </div>
       )}
-
-      <div style={{ marginBottom: '30px' }}>
-        <h3 style={{ marginBottom: '15px' }}>Сменить имя пользователя</h3>
+      <div className='window' style={{padding:'16px'}}>
+        <p><strong>Сменить имя пользователя</strong></p>
         <form onSubmit={handleUsernameChange}>
-          <div style={{ marginBottom: '10px' }}>
-            <input
-              type="text"
-              value={newUsername}
-              onChange={(e) => setNewUsername(e.target.value)}
-              placeholder="Новое имя пользователя"
-              style={{
-                width: '100%',
-                padding: '8px',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-                boxSizing: 'border-box'
-              }}
-              disabled={loading}
-            />
-          </div>
+          <input
+            type="text"
+            value={newUsername}
+            onChange={(e) => setNewUsername(e.target.value)}
+            placeholder="Новое имя пользователя"
+            disabled={loading}
+          />
+          <br/><br/>
           <button 
             type="submit" 
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#0078d4',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
             disabled={loading}
           >
             Сменить
           </button>
         </form>
       </div>
-
-      <div style={{ marginBottom: '30px' }}>
-        <h3 style={{ marginBottom: '15px' }}>Сменить пароль</h3>
+      <div className='window' style={{padding:'16px'}}>
+        <p><strong>Сменить пароль</strong></p>
         <form onSubmit={handlePasswordChange}>
-          <div style={{ marginBottom: '10px' }}>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Новый пароль"
-              style={{
-                width: '100%',
-                padding: '8px',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-                boxSizing: 'border-box',
-                marginBottom: '10px'
-              }}
-              disabled={loading}
-            />
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Подтвердите пароль"
-              style={{
-                width: '100%',
-                padding: '8px',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-                boxSizing: 'border-box'
-              }}
-              disabled={loading}
-            />
-          </div>
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="Новый пароль"
+            disabled={loading}
+          />
+          <br/><br/>
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Подтвердите пароль"
+            disabled={loading}
+          />
+          <br/><br/>
           <button 
             type="submit"
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#0078d4',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
             disabled={loading}
           >
-            Сменить пароль
+            Сменить
           </button>
         </form>
       </div>
-
-      <div>
-        <button 
-          onClick={handleLogout}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#d13438',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            width: '100%'
-          }}
-          disabled={loading}
-        >
-          Выйти из аккаунта
-        </button>
-      </div>
+      <br/>
+      <button 
+        onClick={handleLogout}
+        disabled={loading}
+      >
+        Выйти из аккаунта
+      </button>
     </div>
   );
 };

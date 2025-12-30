@@ -98,7 +98,6 @@ export default function AuthorizationWindow({ onClose }) {
 								disabled={loading}
 							/>
 						</div>
-						<br/>
 						<div className='window' style={{padding:'16px'}}>
 							<label>Пароль:</label>
 							<br/><br/>
