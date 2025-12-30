@@ -147,7 +147,6 @@ export default function AuthorizationWindow({ onClose }) {
 								placeholder="Введите имя пользователя"
 							/>
 						</div>
-						<br/>
 						<div className='window' style={{padding:'16px'}}>
 							<label>
 								Пароль (мин. 8 символов, буквы и цифры):
@@ -162,7 +161,6 @@ export default function AuthorizationWindow({ onClose }) {
 								placeholder="Введите пароль"
 							/>
 						</div>
-						<br/>
 						<div className='window' style={{padding:'16px'}}>
 							<label>
 								Подтвердите пароль:

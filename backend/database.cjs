@@ -1,16 +1,17 @@
 const Datastore = require('nedb');
 const path = require('path');
-
+require('dotenv').config({ path: '../.env' })
+const DB_PATH=process.env.DB_PATH
 class Database {
   constructor() {
     this.users = new Datastore({
-      filename: path.join(__dirname, 'users.db'),
+      filename: path.join(DB_PATH, 'users.db'),
       autoload: true,
       timestampData: true
     });
     
     this.loginAttempts = new Datastore({
-      filename: path.join(__dirname, 'login-attempts.db'),
+      filename: path.join(DB_PATH, 'login-attempts.db'),
       autoload: true
     });
     
