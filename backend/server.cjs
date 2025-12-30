@@ -264,7 +264,8 @@ async function start() {
       try {
         const bucket = req.params.bucket;
         const key = req.params[0]; // wildcard part
-        const filePath = path.join(__dirname, '../data/s3', bucket, key);
+        const s3Base = process.env.S3_DATA_DIR || path.resolve(__dirname, '../data/s3');
+        const filePath = path.join(s3Base, bucket, key);
 
         if (!fs.existsSync(filePath)) {
           return res.status(404).json({ success: false, message: 'Not found' });

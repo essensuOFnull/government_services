@@ -7,7 +7,7 @@ const { promisify } = require('util');
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
 
-const dbPath = path.join(__dirname, '../data/messenger.db');
+const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '../data/messenger.db');
 
 // Создаем директорию для данных если её нет
 if (!fs.existsSync(path.dirname(dbPath))) {

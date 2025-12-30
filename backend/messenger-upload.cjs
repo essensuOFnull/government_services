@@ -5,7 +5,7 @@ const path = require('path');
 const { v4: uuid } = require('uuid');
 const { Storage, Files, Users } = require('./messenger-db.cjs');
 
-const uploadsDir = path.join(__dirname, '../data/uploads');
+const uploadsDir = process.env.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
 
 // Создаем директорию для загрузок если её нет
 if (!fs.existsSync(uploadsDir)) {

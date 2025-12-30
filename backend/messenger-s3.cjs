@@ -3,7 +3,7 @@ const path = require('path');
 
 const BUCKET_NAME = process.env.S3_BUCKET || 'messenger-files';
 const EMBED_S3 = process.env.EMBED_S3 === 'true' || true; // по умолчанию встроенный адаптер
-const STORAGE_DIR = path.resolve(__dirname, '../data/s3');
+const STORAGE_DIR = process.env.S3_DATA_DIR || path.resolve(__dirname, '../data/s3');
 
 if (!fs.existsSync(STORAGE_DIR)) {
   fs.mkdirSync(STORAGE_DIR, { recursive: true });

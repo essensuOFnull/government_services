@@ -21,7 +21,7 @@ const {
   handleMulterError
 } = require('./messenger-upload.cjs');
 
-const uploadsDir = path.join(__dirname, '../data/uploads');
+const uploadsDir = process.env.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
 
 const router = express.Router();
 

@@ -4,7 +4,7 @@ const s3Service = require('./messenger-s3.cjs');
 const fs = require('fs');
 const path = require('path');
 
-const uploadsDir = path.join(__dirname, '../data/uploads');
+const uploadsDir = process.env.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
 
 class StorageManager {
   constructor() {
