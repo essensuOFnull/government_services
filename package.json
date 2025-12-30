@@ -9,22 +9,31 @@
     "build:prod": "vite build && npm run start:prod",
     "start:prod": "NODE_ENV=production node backend/server.cjs",
     "start": "node backend/server.cjs",
+    "messenger": "node backend/server.cjs",
+    "messenger:test": "node backend/messenger-integration-test.cjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.500.0",
     "bcrypt": "^5.1.1",
+    "better-sqlite3": "^12.5.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.22.1",
     "express-rate-limit": "^6.10.0",
     "express-validator": "^7.0.1",
     "helmet": "^7.0.0",
+    "mime-types": "^3.0.2",
+    "multer": "^2.0.2",
     "nedb": "^1.8.0",
+    "node-schedule": "^2.1.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.11.0",
-    "uuid": "^9.0.0"
+    "s3rver": "^3.7.1",
+    "uuid": "^9.0.1",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

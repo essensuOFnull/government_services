@@ -1,5 +1,9 @@
 import Window from './Window';
-export default function MenuWindow() {
+import { useState } from 'react';
+import Messenger from './Messenger';
+
+export default function MenuWindow({ userId }) {
+	const [activeTab, setActiveTab] = useState(0);
 	const group_link="https://t.me/c/3601903002";
 	const threads_id={
 		ПРКПН:4,
@@ -29,21 +33,25 @@ export default function MenuWindow() {
 	return(
 		<>
 			<menu role="tablist">
-				<li role="tab" aria-selected="true"><a>Мессенджер</a></li>
-				<li role="tab"><a>Хранилище</a></li>
-				<li role="tab"><a>Организации</a></li>
+				<li role="tab" aria-selected={activeTab === 0} onClick={() => setActiveTab(0)}><a>Мессенджер</a></li>
+				<li role="tab" aria-selected={activeTab === 1} onClick={() => setActiveTab(1)}><a>Хранилище</a></li>
+				<li role="tab" aria-selected={activeTab === 2} onClick={() => setActiveTab(2)}><a>Организации</a></li>
 			</menu>
-			<div className="window" role="tabpanel">
+			<div className="window" role="tabpanel" style={{ display: activeTab === 0 ? 'block' : 'none' }}>
 				<div className="window-body">
-					<p>the tab content</p>
+					{activeTab === 'messenger' && (
+						<div style={{ padding: 8 }}>
+							<Messenger userId={userId} />
+						</div>
+					)}
 				</div>
 			</div>
-			<div className="window" role="tabpanel">
+			<div className="window" role="tabpanel" style={{ display: activeTab === 1 ? 'block' : 'none' }}>
 				<div className="window-body">
-					<p>the tab content</p>
+					<p>Хранилище - в разработке</p>
 				</div>
 			</div>
-			<div className="window" role="tabpanel">
+			<div className="window" role="tabpanel" style={{ display: activeTab === 2 ? 'block' : 'none' }}>
 				<div className="window-body">
 					<ul className="tree-view">
 						<details open>
