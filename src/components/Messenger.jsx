@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './Messenger.css';
+import Message from './Message';
 
 export function Messenger({ userId }) {
   const [conversations, setConversations] = useState([]);
@@ -13,15 +14,26 @@ export function Messenger({ userId }) {
   const [uploadingUsers, setUploadingUsers] = useState(new Map());
   const wsRef = useRef(null);
   const messageListRef = useRef(null);
+  const [pageSize] = useState(30);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [fileMeta, setFileMeta] = useState(new Map());
   const typingTimeoutRef = useRef(null);
 
   // Инициализация WebSocket
   useEffect(() => {
     if (!userId) return;
 
-    wsRef.current = new WebSocket(`ws://localhost:22869/ws/messenger`, {
-      headers: { 'x-user-id': userId }
-    });
+    const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const host = window.location.host || `${window.location.hostname}:${window.location.port || 22869}`;
+    const wsUrl = `${scheme}://${host}/ws/messenger?userId=${encodeURIComponent(userId)}`;
+    try {
+      wsRef.current = new WebSocket(wsUrl);
+    } catch (err) {
+      console.error('WebSocket init error:', err);
+      wsRef.current = null;
+      return;
+    }
 
     wsRef.current.addEventListener('open', () => {
       console.log('✅ WebSocket подключен');
@@ -140,31 +152,121 @@ export function Messenger({ userId }) {
     fetchConversations();
   }, [userId]);
 
+  // sidebar: favorites button will call openFavorites
+
+  // Создать/получить "Избранное" (чат с самим собой)
+  const openFavorites = async () => {
+    if (!userId) return;
+    try {
+      const res = await fetch('/api/messenger/conversation/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        body: JSON.stringify({ participantIds: [userId] })
+      });
+      const j = await res.json();
+      if (j.success && j.conversation) {
+        // откроем разговор и сбросим пагинацию
+        setCurrentConversation(j.conversation.id);
+        setOffset(0);
+        setHasMore(true);
+        setMessages([]);
+      }
+    } catch (e) { console.error(e); }
+  };
+
   // Получение сообщений при смене разговора
   useEffect(() => {
     if (!currentConversation) return;
 
-    const fetchMessages = async () => {
+    // Загрузка последней страницы сообщений
+    const fetchMessages = async (lim = pageSize, off = 0, prepend = false) => {
       try {
         const response = await fetch(
-          `/api/messenger/conversation/${currentConversation}/messages`,
+          `/api/messenger/conversation/${currentConversation}/messages?limit=${lim}&offset=${off}`,
           { headers: { 'x-user-id': userId } }
         );
         const data = await response.json();
-        setMessages(data.messages || []);
-        // Прокручиваем к последнему сообщению
-        setTimeout(() => {
-          if (messageListRef.current) {
-            messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
-          }
-        }, 0);
+        const msgs = data.messages || [];
+        if (prepend) {
+          setMessages(prev => [...msgs, ...prev]);
+        } else {
+          setMessages(msgs);
+          // прокрутить вниз
+          setTimeout(() => {
+            if (messageListRef.current) {
+              messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+            }
+          }, 0);
+        }
+
+        // Обновим offset/hasMore
+        if (msgs.length < lim) setHasMore(false);
+        else setHasMore(true);
+        setOffset(prev => prev + msgs.length);
       } catch (error) {
         console.error('Ошибка получения сообщений:', error);
       }
     };
 
-    fetchMessages();
+    // reset offset and fetch latest page
+    setOffset(0);
+    fetchMessages(pageSize, 0, false);
   }, [currentConversation, userId]);
+
+  // Ленивая подгрузка при скролле вверх
+  useEffect(() => {
+    const el = messageListRef.current;
+    if (!el) return;
+
+    const handler = async () => {
+      if (el.scrollTop === 0 && hasMore && currentConversation) {
+        // загружаем следующую страницу старых сообщений
+        try {
+          const lim = pageSize;
+          const off = offset;
+          const resp = await fetch(`/api/messenger/conversation/${currentConversation}/messages?limit=${lim}&offset=${off}`, { headers: { 'x-user-id': userId } });
+          const json = await resp.json();
+          const msgs = json.messages || [];
+          if (msgs.length > 0) {
+            setMessages(prev => [...msgs, ...prev]);
+            setOffset(prev => prev + msgs.length);
+            if (msgs.length < lim) setHasMore(false);
+            // сохранить позицию прокрутки примерно на тот же элемент
+            setTimeout(() => { if (el) el.scrollTop = msgs.length * 60; }, 10);
+          } else {
+            setHasMore(false);
+          }
+        } catch (e) { console.error(e); }
+      }
+    };
+
+    el.addEventListener('scroll', handler);
+    return () => el.removeEventListener('scroll', handler);
+  }, [messageListRef, offset, hasMore, currentConversation, userId]);
+
+  // Загрузка метаданных файлов для отображения
+  useEffect(() => {
+    const fileIdsToFetch = new Set();
+    messages.forEach(m => {
+      (m.file_ids || []).forEach(fid => { if (!fileMeta.has(fid)) fileIdsToFetch.add(fid); });
+    });
+
+    if (fileIdsToFetch.size === 0) return;
+
+    (async () => {
+      const newMap = new Map(fileMeta);
+      for (const fid of fileIdsToFetch) {
+        try {
+          const resp = await fetch(`/api/messenger/file/${fid}`, { headers: { 'x-user-id': userId } });
+          const j = await resp.json();
+          if (j.success && j.file) {
+            newMap.set(fid, j.file);
+          }
+        } catch (e) { console.error('file meta fetch', e); }
+      }
+      setFileMeta(newMap);
+    })();
+  }, [messages]);
 
   const handleSendMessage = async () => {
     if (!messageInput.trim() || !currentConversation) return;
@@ -312,6 +414,9 @@ export function Messenger({ userId }) {
     <div className="messenger-container">
       <div className="messenger-sidebar">
         <h2>Разговоры</h2>
+        <div style={{ marginBottom: 8 }}>
+          <button onClick={openFavorites}>Избранное</button>
+        </div>
         <div className="conversations-list">
           {conversations.map(conv => (
             <div
@@ -335,23 +440,7 @@ export function Messenger({ userId }) {
 
             <div className="messages-list" ref={messageListRef}>
               {messages.map(msg => (
-                <div key={msg.id} className="message">
-                  <strong>{msg.sender_id}:</strong> {msg.content}
-                  {msg.file_ids?.length > 0 && (
-                    <div className="message-files">
-                      {msg.file_ids.map(fileId => (
-                        <a
-                          key={fileId}
-                          href={`/api/messenger/download-file/${fileId}`}
-                          className="file-link"
-                        >
-                          📎 Скачать файл
-                        </a>
-                      ))}
-                    </div>
-                  )}
-                  <small>{new Date(msg.created_at).toLocaleTimeString('ru-RU')}</small>
-                </div>
+                <Message key={msg.id} msg={msg} fileMeta={fileMeta} userId={userId} />
               ))}
               {typingUsers.size > 0 && (
                 <div className="typing-indicator">

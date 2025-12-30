@@ -35,13 +35,18 @@ const authenticateUser = (req, res, next) => {
       message: 'Требуется аутентификация'
     });
   }
+  let user = Users.getById(userId);
 
-  const user = Users.getById(userId);
+  // Если пользователя нет в messenger DB — создадим минимальную запись для совместимости
   if (!user) {
-    return res.status(404).json({
-      success: false,
-      message: 'Пользователь не найден'
-    });
+    try {
+      Users.create(userId, userId);
+      user = Users.getById(userId);
+      console.log(`Created messenger user for id=${userId}`);
+    } catch (err) {
+      console.error('Failed to create messenger user:', err);
+      return res.status(500).json({ success: false, message: 'Ошибка создания пользователя' });
+    }
   }
 
   req.user = user;
@@ -70,6 +75,7 @@ router.get('/storage-info', authenticateUser, (req, res) => {
     const storageInfo = storageManager.getStorageInfo(req.user.id);
     res.json(storageInfo);
   } catch (error) {
+    console.error('Error in /storage-info:', error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -182,6 +188,22 @@ router.get('/download-file/:fileId', authenticateUser, async (req, res) => {
   }
 });
 
+// Получение метаданных файла
+router.get('/file/:fileId', authenticateUser, (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const file = FilesDB.getById(fileId);
+    if (!file) return res.status(404).json({ success: false, message: 'File not found' });
+
+    // Формируем публичный URL для просмотра (embedded S3)
+    const s3Url = s3Service.getS3Url(file.s3_key);
+
+    res.json({ success: true, file: Object.assign({}, file, { s3Url }) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // Удаление файла (логическое удаление, физическое через 30 дней)
 router.delete('/delete-file/:fileId', authenticateUser, async (req, res) => {
   try {
@@ -246,6 +268,7 @@ router.post('/conversation/create', authenticateUser, (req, res) => {
       conversation
     });
   } catch (error) {
+    console.error('Error in /conversation/create:', error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -263,6 +286,7 @@ router.get('/conversations', authenticateUser, (req, res) => {
       conversations
     });
   } catch (error) {
+    console.error('Error in /conversations:', error);
     res.status(500).json({
       success: false,
       message: error.message

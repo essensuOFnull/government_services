@@ -15,7 +15,17 @@ class MessengerWebSocketServer {
 
   setupConnections() {
     this.wss.on('connection', (ws, req) => {
-      const userId = req.headers['x-user-id'];
+      // Try headers first (used by tests), then fallback to query param provided by browser
+      let userId = req.headers['x-user-id'];
+      try {
+        if (!userId && req.url) {
+          const base = `http://${req.headers.host}`;
+          const url = new URL(req.url, base);
+          userId = url.searchParams.get('userId') || userId;
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
 
       if (!userId) {
         ws.close(1008, 'User ID required');

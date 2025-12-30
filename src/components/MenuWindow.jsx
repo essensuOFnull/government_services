@@ -2,10 +2,13 @@ import Window from './Window';
 import { useState } from 'react';
 import Messenger from './Messenger';
 import { useWindowsManager } from '../hooks/useWindowsManager';
+import { useAuth } from '../hooks/useAuth';
 
 export default function MenuWindow({ userId }) {
 	const [activeTab, setActiveTab] = useState(0);
 	const { openWindow } = useWindowsManager();
+	const { user } = useAuth();
+	const effectiveUserId = userId || user?.userId;
 	const group_link="https://t.me/c/3601903002";
 	const threads_id={
 		ПРКПН:4,
@@ -42,7 +45,7 @@ export default function MenuWindow({ userId }) {
 			<div className="window" role="tabpanel" style={{ display: activeTab === 0 ? 'block' : 'none' }}>
 				<div className="window-body">
 					<div style={{ marginBottom: 8 }}>
-						<button onClick={() => openWindow({ title: 'Мессенджер', children: <Messenger userId={userId} /> })}>
+						<button onClick={() => openWindow({ title: 'Мессенджер', children: <Messenger userId={effectiveUserId} /> })}>
 							Открыть мессенджер в окне
 						</button>
 					</div>

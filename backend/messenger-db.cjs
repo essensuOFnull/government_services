@@ -24,7 +24,6 @@ function initializeDatabase() {
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
       role TEXT DEFAULT 'guest' CHECK(role IN ('guest', 'sponsor', 'member')),
       total_storage_used INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -120,12 +119,12 @@ async function decompressContent(compressedBuffer) {
 
 // Функции работы с пользователями
 const Users = {
-  create: (id, username, passwordHash, role = 'guest') => {
+  create: (id, username, role = 'guest') => {
     const stmt = db.prepare(`
-      INSERT INTO users (id, username, password_hash, role)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO users (id, username, role)
+      VALUES (?, ?, ?)
     `);
-    stmt.run(id, username, passwordHash, role);
+    stmt.run(id, username, role);
 
     // Установка квоты в зависимости от роли
     const quotaBytes = role === 'guest' ? 10 * 1024 * 1024 * 1024 : null; // 10GB для гостей
@@ -364,6 +363,9 @@ const Conversations = {
       .run(conversationId);
   }
 };
+
+// Инициализируем БД при загрузке модуля
+initializeDatabase();
 
 module.exports = {
   db,
