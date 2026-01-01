@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Message({ msg, fileMeta = new Map(), userId }) {
+export default function Message({ msg, fileMeta = new Map()}) {
   const files = msg.file_ids || [];
 
   const formatTime = (val) => {
@@ -12,7 +12,7 @@ export default function Message({ msg, fileMeta = new Map(), userId }) {
 
   return (
     <div className="message">
-      <strong>{msg.sender_id}:</strong>
+      <strong>{msg.sender_username}:</strong>
       <div className="message-content">{msg.content}</div>
 
       {files.length > 0 && (

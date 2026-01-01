@@ -3,7 +3,7 @@ const mime = require('mime-types');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuid } = require('uuid');
-const { Storage, Files, Users } = require('./messenger-db.cjs');
+const { Storage, Files, Users } = require('./database.cjs');
 
 const uploadsDir = process.env.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
 

@@ -33,33 +33,29 @@ const sqliteFile = process.env.DATABASE_PATH || path.join(DB_PATH, 'app.db');
 const db = new SQLITE(sqliteFile);
 
 // Инициализация таблиц
-db.exec(`
-CREATE TABLE IF NOT EXISTS users (
-  id TEXT PRIMARY KEY,
-  username TEXT UNIQUE,
-  userId TEXT UNIQUE,
-  password TEXT,
-  email TEXT,
-  role TEXT,
-  status TEXT,
-  last_seen INTEGER,
-  storage_used INTEGER DEFAULT 0,
-  storage_quota INTEGER,
-  created_at INTEGER,
-  updated_at INTEGER
-);
+// Load unified schema from SQL file (recreate safe schema)
+try {
+  const schemaSql = fs.readFileSync(path.join(__dirname, 'sql', 'schema.sql'), 'utf8');
+  db.exec(schemaSql);
+} catch (e) {
+  console.warn('Could not load schema SQL file, falling back to defaults:', e.message);
+}
 
-CREATE TABLE IF NOT EXISTS login_attempts (
-  id TEXT PRIMARY KEY,
-  ip TEXT,
-  attempts INTEGER DEFAULT 1,
-  created_at INTEGER,
-  type TEXT,
-  expiresAt INTEGER,
-  timestamp INTEGER,
-  username TEXT
-);
-`);
+// Helper to load query SQL files from `sql/queries` folder (supports both 'table.query' and 'table/query' paths)
+function loadSql(name) {
+  try {
+    // First try direct path with dots (e.g., 'users.getById')
+    const dotPath = path.join(__dirname, 'sql', 'queries', name + '.sql');
+    if (fs.existsSync(dotPath)) {
+      return fs.readFileSync(dotPath, 'utf8');
+    }
+    // Otherwise try nested path with slashes (e.g., 'users/getById')
+    const slashPath = path.join(__dirname, 'sql', 'queries', name + '.sql');
+    return fs.readFileSync(slashPath, 'utf8');
+  } catch (e) {
+    throw new Error(`Missing SQL file for: ${name} (${e.message})`);
+  }
+}
 
 // Backwards-compatibility: некоторые части кода ожидают колонку `storageLimit`.
 // Проверим наличие колонки и добавим её, если нужно.
@@ -317,3 +313,202 @@ class Database {
 }
 
 module.exports = new Database();
+
+// --- Messenger-related schema + helpers ---
+// Ensure WAL/foreign keys for messenger operations
+try { db.pragma('journal_mode = WAL'); } catch (e) {}
+try { db.pragma('foreign_keys = ON'); } catch (e) {}
+
+const zlib = require('zlib');
+const { promisify } = require('util');
+const gzip = promisify(zlib.gzip);
+const gunzip = promisify(zlib.gunzip);
+
+async function compressContent(text) {
+  if (text == null) return null;
+  const buffer = Buffer.from(String(text), 'utf-8');
+  return await gzip(buffer);
+}
+
+async function decompressContent(compressedBuffer) {
+  if (!compressedBuffer) return null;
+  const buffer = await gunzip(compressedBuffer);
+  return buffer.toString('utf-8');
+}
+
+// Re-create or ensure messenger tables from unified schema (idempotent)
+function initializeDatabase() {
+  try {
+    const schemaSql = fs.readFileSync(path.join(__dirname, 'sql', 'schema.sql'), 'utf8');
+    db.exec(schemaSql);
+  } catch (e) {
+    console.warn('Could not initialize DB schema from file:', e.message);
+  }
+}
+
+// Minimal compatibility layer exposing messenger-like API (copied/adapted)
+const Users = {
+  create: (userId, username, role = 'guest') => {
+    // Generate separate UUID for internal id, keep userId as provided
+    const { v4: uuid } = require('uuid');
+    const id = uuid();
+    const now = Date.now();
+    const stmt = db.prepare(loadSql('users/insert'));
+    stmt.run(id, userId, username, null, null, role, 'offline', null, 0, null, 0, now, now);
+    const quotaBytes = role === 'guest' ? 10 * 1024 * 1024 * 1024 : null;
+    db.prepare(loadSql('users/insert_or_ignore')).run(userId, quotaBytes);
+    return { id, userId, username, role };
+  },
+  getById: (userId) => db.prepare(loadSql('users/getById')).get(userId),
+  getByUserId: (userId) => db.prepare(loadSql('users/getByUserId')).get(userId),
+  getByUsername: (username) => db.prepare(loadSql('users/getByUsername')).get(username),
+  updateStatus: (userId, status) => db.prepare(loadSql('users/updateByUserId')).run(status, null, null, null, status, null, null, null, null, Date.now(), userId),
+  updateLastSeen: (userId) => db.prepare(loadSql('users/updateByUserId')).run(null, null, null, null, null, Date.now(), null, null, null, Date.now(), userId)
+};
+
+const Messages = {
+  create: async (id, conversationId, senderId, content, fileIds = []) => {
+    // senderId может быть userId (email) или id (UUID)
+    // Получим пользователя и используем его внутренний id
+    let user = Users.getByUserId(senderId);
+    if (!user) {
+      user = Users.getById(senderId);
+    }
+    const actualSenderId = user ? user.id : senderId;
+    
+    const compressedContent = content ? await compressContent(content) : null;
+    const now = Date.now();
+    db.prepare(loadSql('messages/insert')).run(id, conversationId, actualSenderId, compressedContent, JSON.stringify(fileIds), now);
+    return { id, conversationId, senderId, fileIds, created_at: new Date() };
+  },
+  getById: async (messageId) => {
+    const msg = db.prepare(loadSql('messages/getById')).get(messageId);
+    if (msg && msg.content_compressed) { msg.content = await decompressContent(msg.content_compressed); delete msg.content_compressed; }
+    if (msg && msg.file_ids) msg.file_ids = JSON.parse(msg.file_ids);
+    return msg;
+  },
+  getConversationMessages: async (conversationId, limit = 50, offset = 0) => {
+    const messages = db.prepare(loadSql('messages/getConversationMessages')).all(conversationId, limit, offset);
+    for (const msg of messages) {
+      if (msg.content_compressed) { msg.content = await decompressContent(msg.content_compressed); delete msg.content_compressed; }
+      if (msg.file_ids) msg.file_ids = JSON.parse(msg.file_ids);
+      
+      // Если sender_username отсутствует, попытаемся получить его из БД
+      if (!msg.sender_username && msg.sender_id) {
+        const sender = db.prepare('SELECT username FROM users WHERE id = ?').get(msg.sender_id);
+        msg.sender_username = sender ? sender.username : msg.sender_id;
+      }
+    }
+    return messages.reverse();
+  },
+  update: async (messageId, content) => { const compressedContent = await compressContent(content); const now = Date.now(); db.prepare(loadSql('messages/update')).run(compressedContent, now, messageId); },
+  delete: (messageId) => { const now = Date.now(); db.prepare(loadSql('messages/delete')).run(now, messageId); },
+  markAsRead: (messageId, userId) => db.prepare(loadSql('message_reads/insert')).run(`${messageId}-${userId}`, messageId, userId)
+};
+
+const Files = {
+  create: (id, filename, mimeType, size, s3Key, uploaderId, ownerId = null) => {
+    const now = Date.now();
+    db.prepare(loadSql('files/insert')).run(id, filename, mimeType, size, s3Key, uploaderId, ownerId || uploaderId, now);
+    return { id, filename, mimeType, size, s3_key: s3Key };
+  },
+  getById: (fileId) => db.prepare(loadSql('files/getById')).get(fileId),
+  addReference: (fileId, messageId) => { db.prepare(loadSql('file_references/insert')).run(`${fileId}-${messageId}`, fileId, messageId); db.prepare('UPDATE files SET reference_count = reference_count + 1 WHERE id = ?').run(fileId); },
+  removeReference: (fileId, messageId) => { db.prepare(loadSql('file_references/delete')).run(fileId, messageId); db.prepare('UPDATE files SET reference_count = reference_count - 1 WHERE id = ?').run(fileId); },
+  getUserFiles: (userId) => db.prepare(loadSql('files/getUserFiles')).all(userId),
+  getTotalUserStorage: (userId) => { const result = db.prepare(loadSql('files/getUserFiles')).all(userId).reduce((s, f) => s + (f.size || 0), 0); return result; },
+  delete: (fileId) => { const now = Date.now(); db.prepare(loadSql('files/delete')).run(now, fileId); },
+  getExpiredFiles: (days = 30) => db.prepare(loadSql('files/getExpiredFiles')).all(),
+  permanentlyDelete: (fileId) => db.prepare(loadSql('files/permanentlyDelete')).run(fileId),
+  forwardOwnership: (fileId, newOwnerId) => db.prepare('UPDATE files SET owner_id = ?, last_referenced_by = ? WHERE id = ?').run(newOwnerId, newOwnerId, fileId)
+};
+
+const Storage = {
+  getQuota: (userId) => db.prepare(loadSql('user_storage_quota/get')).get(userId),
+  updateQuota: (userId, limitBytes) => db.prepare(loadSql('user_storage_quota/update_limit')).run(limitBytes, userId),
+  addToUsedStorage: (userId, bytes) => db.prepare(loadSql('user_storage_quota/add')).run(bytes, userId),
+  removeFromUsedStorage: (userId, bytes) => db.prepare(loadSql('user_storage_quota/remove')).run(bytes, bytes, userId),
+  getServerFreeDisk: () => null
+};
+
+const Conversations = {
+  create: (id, participantIds) => { 
+    // participantIds должна быть массивом userIds
+    const stored = Array.isArray(participantIds) ? participantIds : [participantIds];
+    db.prepare(loadSql('conversations/insert')).run(id, JSON.stringify(stored), Date.now(), null); 
+    return { id, participantIds: stored }; 
+  },
+  getOrCreate: (participantIds) => {
+    // Убедимся, что это массив, сортируем по значениям
+    const idsArray = Array.isArray(participantIds) ? participantIds : [participantIds];
+    const sorted = idsArray.sort();
+    const key = JSON.stringify(sorted);
+    
+    let conv = db.prepare(loadSql('conversations/getByParticipantIds')).get(key);
+    if (!conv) {
+      const { v4: uuid } = require('uuid');
+      const id = uuid();
+      conv = Conversations.create(id, sorted);
+    } else {
+      // Преобразуем participant_ids из БД в participantIds (camelCase для API)
+      const participants = typeof conv.participant_ids === 'string' 
+        ? JSON.parse(conv.participant_ids) 
+        : conv.participant_ids;
+      const { participant_ids, ...rest } = conv;
+      conv = {
+        ...rest,
+        participantIds: participants
+      };
+    }
+    return conv;
+  },
+  getUserConversations: (userId) => {
+    const convs = db.prepare("SELECT * FROM conversations WHERE participant_ids LIKE ? ORDER BY last_message_at DESC").all(`%${userId}%`);
+    return convs.map(c => {
+      let participantIds = [];
+      
+      // Пробуем распарсить как JSON массив
+      if (typeof c.participant_ids === 'string') {
+        try {
+          participantIds = JSON.parse(c.participant_ids);
+          if (!Array.isArray(participantIds)) {
+            participantIds = [participantIds];
+          }
+        } catch (e) {
+          // Если не JSON, это может быть строка с запятыми
+          participantIds = c.participant_ids.split(',').map(p => p.trim()).filter(p => p);
+        }
+      } else if (Array.isArray(c.participant_ids)) {
+        participantIds = c.participant_ids;
+      } else {
+        participantIds = [c.participant_ids];
+      }
+      
+      const { participant_ids, ...rest } = c;
+      return {
+        ...rest,
+        participantIds
+      };
+    });
+  },
+  updateLastMessage: (conversationId) => db.prepare('UPDATE conversations SET last_message_at = ? WHERE id = ?').run(Date.now(), conversationId)
+};
+
+// Run messenger initialization now (safe, idempotent)
+initializeDatabase();
+
+// Export both legacy Database instance and messenger API in one module
+module.exports = Object.assign(module.exports, {
+  db,
+  initializeDatabase,
+  compressContent,
+  decompressContent,
+  Users,
+  Messages,
+  Files,
+  Storage,
+  Conversations
+});
+
+// expose SQL loader for other modules
+module.exports.loadSql = loadSql;

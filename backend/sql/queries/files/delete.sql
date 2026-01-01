@@ -1,0 +1,1 @@
+UPDATE files SET deleted_at = ? WHERE id = ?;

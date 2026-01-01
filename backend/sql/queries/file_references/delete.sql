@@ -1,0 +1,1 @@
+DELETE FROM file_references WHERE file_id = ? AND message_id = ?;

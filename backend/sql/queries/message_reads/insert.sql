@@ -1,0 +1,1 @@
+INSERT OR IGNORE INTO message_reads (id, message_id, user_id) VALUES (?, ?, ?);

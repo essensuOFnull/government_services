@@ -1,0 +1,1 @@
+SELECT * FROM files WHERE owner_id = ? AND deleted_at IS NULL ORDER BY created_at DESC;

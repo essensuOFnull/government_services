@@ -1,0 +1,1 @@
+INSERT OR IGNORE INTO file_references (id, file_id, message_id) VALUES (?, ?, ?);

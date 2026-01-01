@@ -1,0 +1,1 @@
+INSERT INTO messages (id, conversation_id, sender_id, content_compressed, file_ids, created_at) VALUES (?, ?, ?, ?, ?, ?);

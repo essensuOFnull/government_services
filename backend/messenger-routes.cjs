@@ -9,7 +9,7 @@ const {
   Files: FilesDB,
   Conversations,
   initializeDatabase
-} = require('./messenger-db.cjs');
+} = require('./database.cjs');
 
 const s3Service = require('./messenger-s3.cjs');
 const storageManager = require('./messenger-storage.cjs');
@@ -35,17 +35,24 @@ const authenticateUser = (req, res, next) => {
       message: 'Требуется аутентификация'
     });
   }
-  let user = Users.getById(userId);
 
-  // Если пользователя нет в messenger DB — создадим минимальную запись для совместимости
+  // Ищем пользователя по userId (который уже должен существовать с момента регистрации)
+  let user = Users.getByUserId(userId);
+
+  // Если пользователя нет — создадим минимальную запись для совместимости
   if (!user) {
     try {
       Users.create(userId, userId);
-      user = Users.getById(userId);
-      console.log(`Created messenger user for id=${userId}`);
+      user = Users.getByUserId(userId);
+      console.log(`Created messenger user for userId=${userId}`);
     } catch (err) {
-      console.error('Failed to create messenger user:', err);
-      return res.status(500).json({ success: false, message: 'Ошибка создания пользователя' });
+      // Если не удалось создать (например, пользователь уже существует),
+      // попробуем получить его ещё раз
+      user = Users.getByUserId(userId);
+      if (!user) {
+        console.error('Failed to create or find messenger user:', err);
+        return res.status(500).json({ success: false, message: 'Ошибка создания пользователя' });
+      }
     }
   }
 
@@ -256,9 +263,9 @@ router.post('/conversation/create', authenticateUser, (req, res) => {
       });
     }
 
-    // Добавляем текущего пользователя если его нет
-    if (!participantIds.includes(req.user.id)) {
-      participantIds.push(req.user.id);
+    // Добавляем текущего пользователя если его нет (используем userId, а не id)
+    if (!participantIds.includes(req.user.userId)) {
+      participantIds.push(req.user.userId);
     }
 
     const conversation = Conversations.getOrCreate(participantIds);
@@ -279,11 +286,33 @@ router.post('/conversation/create', authenticateUser, (req, res) => {
 // Получение разговоров пользователя
 router.get('/conversations', authenticateUser, (req, res) => {
   try {
-    const conversations = Conversations.getUserConversations(req.user.id);
+    const conversations = Conversations.getUserConversations(req.user.userId);
+
+    // Обогащаем разговоры информацией о других участниках
+    const enrichedConversations = conversations.map(conv => {
+      // Защита: убедимся, что participantIds - это массив
+      const participants = Array.isArray(conv.participantIds) ? conv.participantIds : [];
+      const otherParticipants = participants.filter(pid => pid !== req.user.userId);
+      
+      let title = 'Избранное';
+      if (otherParticipants.length > 0) {
+        // Для одного участника - берем его userId, для нескольких - "Группа"
+        if (otherParticipants.length === 1) {
+          title = otherParticipants[0];
+        } else {
+          title = `Группа (${otherParticipants.length + 1})`;
+        }
+      }
+      return {
+        ...conv,
+        title,
+        otherParticipants
+      };
+    });
 
     res.json({
       success: true,
-      conversations
+      conversations: enrichedConversations
     });
   } catch (error) {
     console.error('Error in /conversations:', error);

@@ -1,6 +1,6 @@
 const WebSocket = require('ws');
 const { v4: uuid } = require('uuid');
-const { Users, Messages, Conversations } = require('./messenger-db.cjs');
+const { Users, Messages, Conversations, db: messengerDb, loadSql } = require('./database.cjs');
 
 // Хранилище активных соединений пользователей
 const userConnections = new Map();
@@ -128,22 +128,39 @@ class MessengerWebSocketServer {
     try {
       const message = await Messages.create(messageId, conversationId, userId, content, fileIds);
 
+      // Получим username отправителя для отправки клиентам
+      let senderUsername = userId;
+      let sender = Users.getByUserId(userId);
+      if (sender && sender.username) {
+        senderUsername = sender.username;
+      } else {
+        sender = Users.getById(userId);
+        if (sender && sender.username) {
+          senderUsername = sender.username;
+        }
+      }
+      
+      console.log(`[WebSocket] Message sender: userId="${userId}", username="${senderUsername}", user=${JSON.stringify(sender)}`);
+
       // Обновляем последнее сообщение в разговоре
       Conversations.updateLastMessage(conversationId);
 
       // Получаем участников разговора
-      const conversation = require('./messenger-db.cjs').db
-        .prepare('SELECT * FROM conversations WHERE id = ?')
-        .get(conversationId);
+      const conversation = messengerDb.prepare(loadSql('conversations/getById')).get(conversationId);
 
       const participants = JSON.parse(conversation.participant_ids);
 
-      // Рассылаем сообщение всем участникам
+      // Рассылаем сообщение всем участникам с правильным username
       this.broadcastToConversation(conversationId, {
         type: 'new_message',
         message: {
-          ...message,
-          content: content
+          id: message.id,
+          conversation_id: message.conversation_id,
+          sender_id: message.sender_id,
+          sender_username: senderUsername,
+          content: content,
+          file_ids: message.file_ids,
+          created_at: message.created_at
         }
       });
     } catch (error) {
@@ -324,9 +341,7 @@ class MessengerWebSocketServer {
 
   // Отправка сообщения всем пользователям в разговоре
   broadcastToConversation(conversationId, message) {
-    const conversation = require('./messenger-db.cjs').db
-      .prepare('SELECT * FROM conversations WHERE id = ?')
-      .get(conversationId);
+    const conversation = messengerDb.prepare(loadSql('conversations/getById')).get(conversationId);
 
     if (!conversation) return;
 
@@ -371,9 +386,7 @@ class MessengerWebSocketServer {
 
   // Получение информации о пользователях в разговоре
   getConversationUsersStatus(conversationId) {
-    const conversation = require('./messenger-db.cjs').db
-      .prepare('SELECT * FROM conversations WHERE id = ?')
-      .get(conversationId);
+    const conversation = messengerDb.prepare(loadSql('conversations/getById')).get(conversationId);
 
     if (!conversation) return [];
 

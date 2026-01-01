@@ -1,5 +1,5 @@
 const schedule = require('node-schedule');
-const { Files, Storage, Users } = require('./messenger-db.cjs');
+const { Files, Storage, Users } = require('./database.cjs');
 const s3Service = require('./messenger-s3.cjs');
 const fs = require('fs');
 const path = require('path');

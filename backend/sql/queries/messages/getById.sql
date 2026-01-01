@@ -1,0 +1,1 @@
+SELECT m.*, u.username as sender_username FROM messages m LEFT JOIN users u ON m.sender_id = u.id WHERE m.id = ?;

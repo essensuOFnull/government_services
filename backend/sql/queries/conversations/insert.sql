@@ -1,0 +1,1 @@
+INSERT INTO conversations (id, participant_ids, created_at, last_message_at) VALUES (?, ?, ?, ?);

@@ -165,6 +165,17 @@ export function Messenger({ userId }) {
       });
       const j = await res.json();
       if (j.success && j.conversation) {
+        // Оптимистично добавим разговор в список, если его там еще нет
+        const exists = conversations.some(c => c.id === j.conversation.id);
+        if (!exists) {
+          const newConversation = {
+            ...j.conversation,
+            title: 'Избранное',
+            otherParticipants: []
+          };
+          setConversations([...conversations, newConversation]);
+        }
+        
         // откроем разговор и сбросим пагинацию
         setCurrentConversation(j.conversation.id);
         setOffset(0);
@@ -424,7 +435,7 @@ export function Messenger({ userId }) {
               className={`conversation-item ${currentConversation === conv.id ? 'active' : ''}`}
               onClick={() => setCurrentConversation(conv.id)}
             >
-              <span>{conv.id}</span>
+              <span>{conv.title || conv.id}</span>
             </div>
           ))}
         </div>
@@ -440,7 +451,7 @@ export function Messenger({ userId }) {
 
             <div className="messages-list" ref={messageListRef}>
               {messages.map(msg => (
-                <Message key={msg.id} msg={msg} fileMeta={fileMeta} userId={userId} />
+                <Message key={msg.id} msg={msg} fileMeta={fileMeta} />
               ))}
               {typingUsers.size > 0 && (
                 <div className="typing-indicator">

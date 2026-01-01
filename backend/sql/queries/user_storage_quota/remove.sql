@@ -1,0 +1,1 @@
+UPDATE user_storage_quota SET storage_used_bytes = CASE WHEN storage_used_bytes - ? >= 0 THEN storage_used_bytes - ? ELSE 0 END WHERE user_id = ?;
