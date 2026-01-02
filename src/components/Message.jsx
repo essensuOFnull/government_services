@@ -1,6 +1,7 @@
 import React from 'react';
+import FileItem from './FileItem';
 
-export default function Message({ msg, fileMeta = new Map()}) {
+export default function Message({ msg, fileMeta = new Map(), users = new Map()}) {
   const files = msg.file_ids || [];
 
   const formatTime = (val) => {
@@ -10,50 +11,24 @@ export default function Message({ msg, fileMeta = new Map()}) {
     } catch (e) { return '' + val; }
   };
 
+  const senderId = msg.sender_id || msg.senderId || msg.user_id || (msg.sender && msg.sender.id) || null;
+  const senderFromMap = senderId ? users.get(senderId) : null;
+  const senderName = (msg.sender_username && msg.sender_username !== 'online:' && msg.sender_username !== 'null')
+    ? msg.sender_username
+    : (senderFromMap && (senderFromMap.username || senderFromMap.displayName || senderFromMap.name))
+      || (msg.sender && (msg.sender.username || msg.sender.name))
+    || (senderId ? `пользователь #${senderId.substring(0, 8)}` : 'Неизвестный пользователь');
+
   return (
     <div className="message">
-      <strong>{msg.sender_username}:</strong>
+      <strong>{senderName}:</strong>
       <div className="message-content">{msg.content}</div>
 
       {files.length > 0 && (
         <div className="message-files">
-          {files.map(fileId => {
-            const meta = fileMeta.get(fileId) || {};
-            const mime = meta.mime_type || '';
-            const s3url = meta.s3Url || `/api/messenger/download-file/${fileId}`;
-
-            const isImage = mime.startsWith('image/');
-            const isVideo = mime.startsWith('video/');
-            const isAudio = mime.startsWith('audio/');
-            const isText = mime.startsWith('text/') || mime === 'application/json';
-
-            return (
-              <div key={fileId} className="file-item">
-                {isImage && (
-                  <img src={s3url} alt={meta.original_filename || 'image'} className="file-preview" />
-                )}
-                {isVideo && (
-                  <video src={s3url} controls className="file-preview" />
-                )}
-                {isAudio && (
-                  <audio src={s3url} controls className="file-audio" />
-                )}
-                {(!isImage && !isVideo && !isAudio) && (
-                  <div className="file-generic">
-                    <img src="/public/file-icon.png" alt="file" style={{width:48,height:48}} />
-                    <div>{meta.original_filename || fileId}</div>
-                  </div>
-                )}
-
-                <div className="file-actions">
-                  <a href={`/api/messenger/download-file/${fileId}`} className="download-btn">Скачать</a>
-                  {(!isText) && (
-                    <a href={s3url} target="_blank" rel="noreferrer" className="open-btn">Открыть</a>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {files.map(fileId => (
+            <FileItem key={fileId} fileId={fileId} fileMeta={fileMeta.get(fileId) || {}} />
+          ))}
         </div>
       )}
 

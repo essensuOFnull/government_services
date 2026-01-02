@@ -131,14 +131,43 @@ const getServerFreeSpace = () => {
   }
 };
 
-// Multer middleware с лимитом размера (можно убрать если не нужно ограничение на файл)
-const upload = multer({
-  storage,
-  fileFilter,
-  limits: {
-    fileSize: 0 // Без ограничения на размер файла
+// Функция для вычисления лимита на размер файла
+const getFileSizeLimit = (userId) => {
+  try {
+    // Get user quota info
+    const userQuota = require('./database.cjs').Storage.getQuota(userId);
+    const userLimit = userQuota?.storage_limit_bytes ?? (10 * 1024 * 1024 * 1024); // Default 10GB
+    const userUsed = userQuota?.storage_used_bytes ?? 0;
+    const userAvailable = userLimit - userUsed;
+
+    // Get server free space
+    const serverFree = getServerFreeSpace();
+
+    // Use the minimum of what's available
+    const maxAllowed = Math.min(userAvailable, serverFree);
+    
+    // Ensure a reasonable minimum (1MB minimum)
+    return Math.max(maxAllowed, 1024 * 1024);
+  } catch (e) {
+    console.warn('Error calculating file size limit:', e);
+    // Default to 10GB if there's an error
+    return 10 * 1024 * 1024 * 1024;
   }
-});
+};
+
+// Multer middleware с динамическим лимитом размера
+const createUploadMiddleware = () => {
+  return multer({
+    storage,
+    fileFilter,
+    limits: {
+      fileSize: 10 * 1024 * 1024 * 1024, // 10GB upper limit per file (actual limit checked in route)
+      fieldSize: 10 * 1024 * 1024 * 1024 // 10GB limit per field
+    }
+  });
+};
+
+const upload = createUploadMiddleware();
 
 // Middleware для обработки ошибок multer
 const handleMulterError = (err, req, res, next) => {
@@ -187,5 +216,6 @@ module.exports = {
   validateMimeType,
   handleMulterError,
   getServerFreeSpace,
+  getFileSizeLimit,
   ALLOWED_MIME_TYPES
 };

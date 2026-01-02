@@ -157,10 +157,10 @@ class MessengerWebSocketServer {
           id: message.id,
           conversation_id: message.conversation_id,
           sender_id: message.sender_id,
-          sender_username: senderUsername,
+          sender_username: senderUsername || userId,
           content: content,
           file_ids: message.file_ids,
-          created_at: message.created_at
+          created_at: Date.now()
         }
       });
     } catch (error) {
@@ -184,9 +184,14 @@ class MessengerWebSocketServer {
       startTime: Date.now()
     });
 
+    // Get user info to send along with typing indicator
+    const user = Users.getByUserId(userId) || Users.getById(userId);
+    const username = user?.username || userId;
+
     this.broadcastToConversation(conversationId, {
       type: 'user_typing',
       userId,
+      username,
       conversationId
     });
 

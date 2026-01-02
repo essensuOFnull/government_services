@@ -5,7 +5,6 @@ CREATE TABLE IF NOT EXISTS users (
   userId TEXT UNIQUE,
   username TEXT UNIQUE NOT NULL,
   password TEXT,
-  email TEXT,
   role TEXT DEFAULT 'guest' CHECK(role IN ('guest','sponsor','member')),
   status TEXT DEFAULT 'offline',
   last_seen INTEGER,

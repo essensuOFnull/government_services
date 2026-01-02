@@ -174,18 +174,80 @@ router.get('/download-file/:fileId', authenticateUser, async (req, res) => {
       });
     }
 
-    // Загружаем из S3 в временный файл
-    const tempPath = path.join(uploadsDir, `temp-${fileId}`);
-    await s3Service.downloadFile(file.s3_key, tempPath);
+    // Проверяем доступ к файлу
+    // Доступ имеют: отправитель файла или участники разговора, где находится файл
+    let hasAccess = false;
 
-    // Отправляем файл
-    res.download(tempPath, file.original_filename, (err) => {
-      if (err) console.error('Ошибка скачивания:', err);
-      // Удаляем временный файл
-      fs.unlink(tempPath, (err) => {
-        if (err) console.error('Ошибка удаления временного файла:', err);
+    // Проверка 1: пользователь отправил файл
+    if (file.uploader_id === req.user.id) {
+      hasAccess = true;
+    } else {
+      // Проверка 2: пользователь участник разговора с этим файлом
+      // Найдём все сообщения с этим файлом
+      const messagesWithFile = db.prepare(
+        `SELECT DISTINCT m.conversation_id 
+         FROM messages m 
+         JOIN file_references fr ON m.id = fr.message_id 
+         WHERE fr.file_id = ?`
+      ).all(fileId);
+
+      if (messagesWithFile.length > 0) {
+        // Проверим, участник ли пользователь хотя бы одного из этих разговоров
+        for (const msg of messagesWithFile) {
+          const conversation = Conversations.getOrCreate([]);
+          const convData = db.prepare('SELECT participant_ids FROM conversations WHERE id = ?').get(msg.conversation_id);
+          if (convData) {
+            const participants = JSON.parse(convData.participant_ids);
+            if (participants.includes(req.user.userId)) {
+              hasAccess = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: 'У вас нет доступа к этому файлу'
       });
-    });
+    }
+
+    // Получаем S3 URL напрямую
+    const s3Url = s3Service.getS3Url(file.s3_key);
+
+    // Перенаправляем на S3 с правильным именем файла
+    res.set('Content-Disposition', `attachment; filename="${file.original_filename}"`);
+    res.set('Content-Type', file.mime_type || 'application/octet-stream');
+    
+    // Используем S3 URL для скачивания
+    try {
+      const response = await fetch(s3Url);
+      if (!response.ok) {
+        throw new Error(`S3 returned ${response.status}`);
+      }
+      response.body.pipe(res);
+    } catch (fetchErr) {
+      console.error('Ошибка скачивания из S3:', fetchErr);
+      // Fallback: попробуем загрузить из S3 в временный файл
+      const tempPath = path.join(uploadsDir, `temp-${fileId}`);
+      try {
+        await s3Service.downloadFile(file.s3_key, tempPath);
+        res.download(tempPath, file.original_filename, (err) => {
+          if (err) console.error('Ошибка скачивания:', err);
+          fs.unlink(tempPath, (unlinkErr) => {
+            if (unlinkErr) console.error('Ошибка удаления временного файла:', unlinkErr);
+          });
+        });
+      } catch (dlErr) {
+        console.error('Ошибка при загрузке файла:', dlErr);
+        res.status(500).json({
+          success: false,
+          message: 'Не удалось загрузить файл'
+        });
+      }
+    }
   } catch (error) {
     console.error('Ошибка при скачивании:', error);
     res.status(500).json({
@@ -201,6 +263,42 @@ router.get('/file/:fileId', authenticateUser, (req, res) => {
     const { fileId } = req.params;
     const file = FilesDB.getById(fileId);
     if (!file) return res.status(404).json({ success: false, message: 'File not found' });
+
+    // Проверяем доступ к файлу
+    let hasAccess = false;
+
+    // Проверка 1: пользователь отправил файл
+    if (file.uploader_id === req.user.id) {
+      hasAccess = true;
+    } else {
+      // Проверка 2: пользователь участник разговора с этим файлом
+      const messagesWithFile = db.prepare(
+        `SELECT DISTINCT m.conversation_id 
+         FROM messages m 
+         JOIN file_references fr ON m.id = fr.message_id 
+         WHERE fr.file_id = ?`
+      ).all(fileId);
+
+      if (messagesWithFile.length > 0) {
+        for (const msg of messagesWithFile) {
+          const convData = db.prepare('SELECT participant_ids FROM conversations WHERE id = ?').get(msg.conversation_id);
+          if (convData) {
+            const participants = JSON.parse(convData.participant_ids);
+            if (participants.includes(req.user.userId)) {
+              hasAccess = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: 'У вас нет доступа к этому файлу'
+      });
+    }
 
     // Формируем публичный URL для просмотра (embedded S3)
     const s3Url = s3Service.getS3Url(file.s3_key);

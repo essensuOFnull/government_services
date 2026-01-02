@@ -362,8 +362,8 @@ const Users = {
   getById: (userId) => db.prepare(loadSql('users/getById')).get(userId),
   getByUserId: (userId) => db.prepare(loadSql('users/getByUserId')).get(userId),
   getByUsername: (username) => db.prepare(loadSql('users/getByUsername')).get(username),
-  updateStatus: (userId, status) => db.prepare(loadSql('users/updateByUserId')).run(status, null, null, null, status, null, null, null, null, Date.now(), userId),
-  updateLastSeen: (userId) => db.prepare(loadSql('users/updateByUserId')).run(null, null, null, null, null, Date.now(), null, null, null, Date.now(), userId)
+  updateStatus: (userId, status) => db.prepare(loadSql('users/updateByUserId')).run(null, null, null, status, null, null, null, null, Date.now(), userId),
+  updateLastSeen: (userId) => db.prepare(loadSql('users/updateByUserId')).run(null, null, null, null, Date.now(), null, null, null, Date.now(), userId)
 };
 
 const Messages = {
@@ -379,7 +379,7 @@ const Messages = {
     const compressedContent = content ? await compressContent(content) : null;
     const now = Date.now();
     db.prepare(loadSql('messages/insert')).run(id, conversationId, actualSenderId, compressedContent, JSON.stringify(fileIds), now);
-    return { id, conversationId, senderId, fileIds, created_at: new Date() };
+    return { id, conversation_id: conversationId, sender_id: actualSenderId, file_ids: fileIds, created_at: new Date() };
   },
   getById: async (messageId) => {
     const msg = db.prepare(loadSql('messages/getById')).get(messageId);
@@ -410,9 +410,17 @@ const Files = {
   create: (id, filename, mimeType, size, s3Key, uploaderId, ownerId = null) => {
     const now = Date.now();
     db.prepare(loadSql('files/insert')).run(id, filename, mimeType, size, s3Key, uploaderId, ownerId || uploaderId, now);
-    return { id, filename, mimeType, size, s3_key: s3Key };
+    return { id, original_filename: filename, mime_type: mimeType, size, s3_key: s3Key };
   },
-  getById: (fileId) => db.prepare(loadSql('files/getById')).get(fileId),
+  getById: (fileId) => {
+    const file = db.prepare(loadSql('files/getById')).get(fileId);
+    if (!file) return null;
+    // Ensure camelCase field for s3Url compatibility
+    if (!file.s3Url && file.s3_key) {
+      file.s3Url = `/api/messenger/file/${file.s3_key}`;
+    }
+    return file;
+  },
   addReference: (fileId, messageId) => { db.prepare(loadSql('file_references/insert')).run(`${fileId}-${messageId}`, fileId, messageId); db.prepare('UPDATE files SET reference_count = reference_count + 1 WHERE id = ?').run(fileId); },
   removeReference: (fileId, messageId) => { db.prepare(loadSql('file_references/delete')).run(fileId, messageId); db.prepare('UPDATE files SET reference_count = reference_count - 1 WHERE id = ?').run(fileId); },
   getUserFiles: (userId) => db.prepare(loadSql('files/getUserFiles')).all(userId),

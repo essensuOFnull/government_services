@@ -65,6 +65,14 @@ export function Messenger({ userId }) {
 
       case 'user_typing':
         setTypingUsers(prev => new Set([...prev, data.userId]));
+        // Add user info to users map if username is provided
+        if (data.username && data.userId) {
+          setUsers(prev => {
+            const updated = new Map(prev);
+            updated.set(data.userId, { id: data.userId, username: data.username });
+            return updated;
+          });
+        }
         break;
 
       case 'user_stopped_typing':
@@ -321,7 +329,24 @@ export function Messenger({ userId }) {
     const files = e.target.files;
     if (!files || !currentConversation) return;
 
+    // Determine quota/free space if available
+    let projectedUsed = storageInfo?.quota?.usedBytes || 0;
+    const userLimit = storageInfo?.quota?.limitBytes ?? null;
+    const serverFree = storageInfo?.serverStatus?.freeBytes ?? null;
+
     for (const file of files) {
+      // Pre-check: will this file make user exceed their quota?
+      if (userLimit != null && projectedUsed + file.size > userLimit) {
+        alert(`Нельзя загрузить "${file.name}": превысится лимит пользователя.`);
+        continue;
+      }
+
+      // Pre-check: server has enough free space for this file?
+      if (serverFree != null && file.size > serverFree) {
+        alert(`Нельзя загрузить "${file.name}": на сервере недостаточно места.`);
+        continue;
+      }
+
       const formData = new FormData();
       formData.append('file', file);
       formData.append('conversationId', currentConversation);
@@ -359,6 +384,10 @@ export function Messenger({ userId }) {
           // Обновляем информацию о хранилище
           if (data.storageInfo) {
             setStorageInfo(data.storageInfo);
+            // sync projectedUsed from server response if available
+            projectedUsed = data.storageInfo.quota?.usedBytes ?? projectedUsed + file.size;
+          } else {
+            projectedUsed += file.size;
           }
         } else {
           console.error('Ошибка загрузки файла:', data.message);
@@ -451,11 +480,14 @@ export function Messenger({ userId }) {
 
             <div className="messages-list" ref={messageListRef}>
               {messages.map(msg => (
-                <Message key={msg.id} msg={msg} fileMeta={fileMeta} />
+                <Message key={msg.id} msg={msg} fileMeta={fileMeta} users={users} />
               ))}
               {typingUsers.size > 0 && (
                 <div className="typing-indicator">
-                  {Array.from(typingUsers).join(', ')} печатает...
+                  {Array.from(typingUsers).map(id => {
+                    const u = users.get(id);
+                    return (u && (u.username || u.displayName || u.name)) || id;
+                  }).join(', ')} печатает...
                 </div>
               )}
               {uploadingUsers.size > 0 && (
