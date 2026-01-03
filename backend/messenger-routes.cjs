@@ -8,7 +8,8 @@ const {
   Messages,
   Files: FilesDB,
   Conversations,
-  initializeDatabase
+  initializeDatabase,
+  db
 } = require('./database.cjs');
 
 const s3Service = require('./messenger-s3.cjs');
@@ -300,8 +301,8 @@ router.get('/file/:fileId', authenticateUser, (req, res) => {
       });
     }
 
-    // Формируем публичный URL для просмотра (embedded S3)
-    const s3Url = s3Service.getS3Url(file.s3_key);
+    // Формируем защищённый URL для просмотра/скачивания через наш маршрут
+    const s3Url = `/api/messenger/download-file/${fileId}`;
 
     res.json({ success: true, file: Object.assign({}, file, { s3Url }) });
   } catch (err) {
