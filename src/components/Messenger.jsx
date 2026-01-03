@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './Messenger.css';
 import Message from './Message';
+import Avatar from './Avatar';
 
 export function Messenger({ userId }) {
   const [conversations, setConversations] = useState([]);
@@ -288,6 +289,34 @@ export function Messenger({ userId }) {
     })();
   }, [messages]);
 
+  // Загрузка информации о пользователях из сообщений
+  useEffect(() => {
+    const userIds = new Set();
+    messages.forEach(m => {
+      if (m.sender_id) userIds.add(m.sender_id);
+    });
+
+    if (userIds.size === 0) return;
+
+    userIds.forEach(senderId => {
+      if (!users.has(senderId)) {
+        // Если у нас есть sender_username в сообщении, используем его
+        const msg = messages.find(m => m.sender_id === senderId);
+        if (msg && msg.sender_username) {
+          setUsers(prev => {
+            const updated = new Map(prev);
+            updated.set(senderId, { 
+              id: senderId, 
+              username: msg.sender_username,
+              userId: msg.sender_userId || senderId
+            });
+            return updated;
+          });
+        }
+      }
+    });
+  }, [messages, users]);
+
   const handleSendMessage = async () => {
     if (!messageInput.trim() && attachments.length === 0) return;
     if (!currentConversation.id) return;
@@ -415,15 +444,31 @@ export function Messenger({ userId }) {
           <button onClick={openFavorites}>Избранное</button>
         </div>
         <div className="conversations-list">
-          {conversations.map(conv => (
-            <button
-              key={conv.id}
-              className={`conversation-item ${currentConversation&&currentConversation.id === conv.id ? 'active' : ''}`}
-              onClick={() => setCurrentConversation(conv)}
-            >
-              <span>{conv.title || conv.id}</span>
-            </button>
-          ))}
+          {conversations.map(conv => {
+            // Получаем ID других участников (исключая текущего пользователя)
+            const participantIds = conv.participant_ids ? JSON.parse(conv.participant_ids) : [];
+            const otherParticipant = participantIds.find(id => id !== userId);
+            const otherUser = otherParticipant ? users.get(otherParticipant) : null;
+            const displayName = otherUser?.username || conv.title || conv.id;
+            
+            return (
+              <button
+                key={conv.id}
+                className={`conversation-item ${currentConversation&&currentConversation.id === conv.id ? 'active' : ''}`}
+                onClick={() => setCurrentConversation(conv)}
+                style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'flex-start' }}
+              >
+                {otherParticipant && (
+                  <Avatar 
+                    userId={otherParticipant} 
+                    username={displayName}
+                    size={32}
+                  />
+                )}
+                <span>{displayName}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 

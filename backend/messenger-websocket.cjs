@@ -130,14 +130,9 @@ class MessengerWebSocketServer {
 
       // Получим username отправителя для отправки клиентам
       let senderUsername = userId;
-      let sender = Users.getByUserId(userId);
+      let sender = Users.getById(userId);
       if (sender && sender.username) {
         senderUsername = sender.username;
-      } else {
-        sender = Users.getById(userId);
-        if (sender && sender.username) {
-          senderUsername = sender.username;
-        }
       }
       
       console.log(`[WebSocket] Message sender: userId="${userId}", username="${senderUsername}", user=${JSON.stringify(sender)}`);
@@ -150,7 +145,7 @@ class MessengerWebSocketServer {
 
       const participants = JSON.parse(conversation.participant_ids);
 
-      // Рассылаем сообщение всем участникам с правильным username
+      // Рассылаем сообщение всем участникам с правильным username и userId
       this.broadcastToConversation(conversationId, {
         type: 'new_message',
         message: {

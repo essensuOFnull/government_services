@@ -68,11 +68,11 @@ class AuthMiddleware {
       throw new Error('Пользователь с таким именем уже существует');
     }
 
-    const userId = uuidv4();
+    const id = uuidv4();
     const hashedPassword = await this.hashPassword(password);
 
     const user = {
-      userId,
+      id,
       username,
       password: hashedPassword,
       role: 'guest',
@@ -124,7 +124,7 @@ class AuthMiddleware {
     return userWithoutPassword;
   }
 
-  async changeUsername(userId, newUsername) {
+  async changeUsername(id, newUsername) {
     await this.validateUsername(newUsername);
 
     const existingUser = await new Promise((resolve) => {
@@ -134,13 +134,13 @@ class AuthMiddleware {
       });
     });
 
-    if (existingUser && existingUser.userId !== userId) {
+    if (existingUser && existingUser.id !== id) {
       throw new Error('Это имя пользователя уже занято');
     }
 
     return new Promise((resolve, reject) => {
       db.users.update(
-        { userId },
+        { id },
         { $set: { username: newUsername, updatedAt: new Date() } },
         {},
         (err) => {
@@ -151,13 +151,13 @@ class AuthMiddleware {
     });
   }
 
-  async changePassword(userId, newPassword) {
+  async changePassword(id, newPassword) {
     await this.validatePassword(newPassword);
     const hashedPassword = await this.hashPassword(newPassword);
 
     return new Promise((resolve, reject) => {
       db.users.update(
-        { userId },
+        { id },
         { $set: { password: hashedPassword, updatedAt: new Date() } },
         {},
         (err) => {
@@ -168,9 +168,9 @@ class AuthMiddleware {
     });
   }
 
-  async getUserById(userId) {
+  async getUserById(id) {
     return new Promise((resolve) => {
-      db.users.findOne({ userId }, (err, user) => {
+      db.users.findOne({ id }, (err, user) => {
         if (err || !user) {
           resolve(null);
           return;

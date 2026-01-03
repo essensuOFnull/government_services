@@ -14,7 +14,7 @@ export const useAuth = () => {
       
       if (response.success) {
         setUser(response.user);
-        storage.saveAuthData(username, response.user.userId);
+        storage.saveAuthData(username, response.user.id);
         return { success: true };
       }
     } catch (err) {
@@ -31,7 +31,7 @@ export const useAuth = () => {
       
       if (response.success) {
         setUser(response.user);
-        storage.saveAuthData(username, response.user.userId);
+        storage.saveAuthData(username, response.user.id);
         return { success: true };
       }
     } catch (err) {
@@ -50,11 +50,11 @@ export const useAuth = () => {
     if (!user) return { success: false, message: 'Не авторизован' };
     
     try {
-      const response = await api.changeUsername(user.userId, newUsername);
+      const response = await api.changeUsername(user.id, newUsername);
       
       if (response.success) {
         // Обновляем данные в storage (без пароля)
-        storage.updateAuthData(newUsername, user.userId);
+        storage.updateAuthData(newUsername, user.id);
         setUser(prev => ({ ...prev, username: newUsername }));
         return { success: true };
       }
@@ -67,7 +67,7 @@ export const useAuth = () => {
     if (!user) return { success: false, message: 'Не авторизован' };
     
     try {
-      const response = await api.changePassword(user.userId, newPassword);
+      const response = await api.changePassword(user.id, newPassword);
       
       if (response.success) {
         // Не сохраняем пароль локально
@@ -78,15 +78,21 @@ export const useAuth = () => {
     }
   }, [user]);
 
+  const updateUser = useCallback((updatedUser) => {
+    if (updatedUser) {
+      setUser(prev => ({ ...prev, ...updatedUser }));
+    }
+  }, []);
+
   // Автоматический вход при загрузке
   useEffect(() => {
     const autoLogin = async () => {
       try {
         const authData = storage.getAuthData();
 
-        if (authData && authData.userId) {
+        if (authData && authData.id) {
           try {
-            const response = await api.getUser(authData.userId);
+            const response = await api.getUser(authData.id);
             if (response && response.success) {
               setUser(response.user);
             } else {
@@ -115,6 +121,7 @@ export const useAuth = () => {
     logout,
     changeUsername,
     changePassword,
+    updateUser,
     isAuthenticated: !!user
   };
 };

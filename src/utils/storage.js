@@ -2,11 +2,11 @@ const STORAGE_KEY = 'auth_data';
 
 export const storage = {
   // Сохранение данных аутентификации (без пароля)
-  saveAuthData(username, userId) {
+  saveAuthData(username, id) {
     try {
       const data = {
         username,
-        userId,
+        id,
         timestamp: Date.now()
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -24,7 +24,7 @@ export const storage = {
       if (!data) return null;
 
       const parsed = JSON.parse(data);
-      if (!parsed.username || !parsed.userId) return null;
+      if (!parsed.username || !parsed.id) return null;
 
       // Проверяем, не устарели ли данные (например, больше 30 дней)
       if (Date.now() - parsed.timestamp > 30 * 24 * 60 * 60 * 1000) {
@@ -34,7 +34,7 @@ export const storage = {
 
       return {
         username: parsed.username,
-        userId: parsed.userId
+        id: parsed.id
       };
     } catch (error) {
       console.error('Ошибка чтения данных:', error);
@@ -44,12 +44,12 @@ export const storage = {
   },
 
   // Обновление данных
-  updateAuthData(username, userId) {
+  updateAuthData(username, id) {
     const current = this.getAuthData() || {};
     const newUsername = username || current.username;
-    const newUserId = userId || current.userId;
-    if (!newUsername || !newUserId) return false;
-    return this.saveAuthData(newUsername, newUserId);
+    const newId = id || current.id;
+    if (!newUsername || !newId) return false;
+    return this.saveAuthData(newUsername, newId);
   },
 
   // Очистка данных

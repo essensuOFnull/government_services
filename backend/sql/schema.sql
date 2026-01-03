@@ -2,7 +2,6 @@
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
-  userId TEXT UNIQUE,
   username TEXT UNIQUE NOT NULL,
   password TEXT,
   role TEXT DEFAULT 'guest' CHECK(role IN ('guest','sponsor','member')),
@@ -11,8 +10,10 @@ CREATE TABLE IF NOT EXISTS users (
   storage_used INTEGER DEFAULT 0,
   storage_quota INTEGER,
   total_storage_used INTEGER DEFAULT 0,
+  avatar_file_id TEXT,
   created_at INTEGER DEFAULT (strftime('%s','now')),
-  updated_at INTEGER
+  updated_at INTEGER,
+  FOREIGN KEY (avatar_file_id) REFERENCES files(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS login_attempts (

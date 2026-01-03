@@ -74,6 +74,9 @@ try {
   if (!names.includes('storageUsed')) {
     db.prepare("ALTER TABLE users ADD COLUMN storageUsed INTEGER DEFAULT 0").run();
   }
+  if (!names.includes('avatar_file_id')) {
+    db.prepare("ALTER TABLE users ADD COLUMN avatar_file_id TEXT").run();
+  }
   // Ensure login_attempts columns exist for legacy rate-limiter
   try {
     const la = db.prepare("PRAGMA table_info('login_attempts')").all();
@@ -348,43 +351,48 @@ function initializeDatabase() {
 
 // Minimal compatibility layer exposing messenger-like API (copied/adapted)
 const Users = {
-  create: (userId, username, role = 'guest') => {
-    // Generate separate UUID for internal id, keep userId as provided
-    const { v4: uuid } = require('uuid');
-    const id = uuid();
+  create: (id, username, role = 'guest') => {
     const now = Date.now();
     const stmt = db.prepare(loadSql('users/insert'));
-    stmt.run(id, userId, username, null, null, role, 'offline', null, 0, null, 0, now, now);
+    stmt.run(id, username, null, null, role, 'offline', null, 0, null, 0, now, now);
     const quotaBytes = role === 'guest' ? 10 * 1024 * 1024 * 1024 : null;
-    db.prepare(loadSql('users/insert_or_ignore')).run(userId, quotaBytes);
-    return { id, userId, username, role };
+    db.prepare(loadSql('users/insert_or_ignore')).run(id, quotaBytes);
+    return { id, username, role };
   },
-  getById: (userId) => db.prepare(loadSql('users/getById')).get(userId),
-  getByUserId: (userId) => db.prepare(loadSql('users/getByUserId')).get(userId),
+  getById: (id) => db.prepare(loadSql('users/getById')).get(id),
+  getByUserId: (id) => db.prepare(loadSql('users/getByUserId')).get(id),
   getByUsername: (username) => db.prepare(loadSql('users/getByUsername')).get(username),
-  updateStatus: (userId, status) => db.prepare(loadSql('users/updateByUserId')).run(null, null, null, status, null, null, null, null, Date.now(), userId),
-  updateLastSeen: (userId) => db.prepare(loadSql('users/updateByUserId')).run(null, null, null, null, Date.now(), null, null, null, Date.now(), userId)
+  updateStatus: (id, status) => db.prepare(loadSql('users/updateByUserId')).run(null, null, null, status, null, null, null, null, null, Date.now(), id),
+  updateLastSeen: (id) => db.prepare(loadSql('users/updateByUserId')).run(null, null, null, null, Date.now(), null, null, null, null, Date.now(), id),
+  update: (id, fields) => {
+    // Generic update method supporting any user field
+    const { username, password, role, status, last_seen, storage_used, storage_quota, total_storage_used, avatar_file_id } = fields;
+    return db.prepare(loadSql('users/updateByUserId')).run(username, password, role, status, last_seen, storage_used, storage_quota, total_storage_used, avatar_file_id, Date.now(), id);
+  }
 };
 
 const Messages = {
   create: async (id, conversationId, senderId, content, fileIds = []) => {
-    // senderId может быть userId (email) или id (UUID)
-    // Получим пользователя и используем его внутренний id
-    let user = Users.getByUserId(senderId);
-    if (!user) {
-      user = Users.getById(senderId);
-    }
-    const actualSenderId = user ? user.id : senderId;
-    
+    // senderId это UUID пользователя
     const compressedContent = content ? await compressContent(content) : null;
     const now = Date.now();
-    db.prepare(loadSql('messages/insert')).run(id, conversationId, actualSenderId, compressedContent, JSON.stringify(fileIds), now);
-    return { id, conversation_id: conversationId, sender_id: actualSenderId, file_ids: fileIds, created_at: new Date() };
+    db.prepare(loadSql('messages/insert')).run(id, conversationId, senderId, compressedContent, JSON.stringify(fileIds), now);
+    return { id, conversation_id: conversationId, sender_id: senderId, file_ids: fileIds, created_at: new Date() };
   },
   getById: async (messageId) => {
     const msg = db.prepare(loadSql('messages/getById')).get(messageId);
     if (msg && msg.content_compressed) { msg.content = await decompressContent(msg.content_compressed); delete msg.content_compressed; }
     if (msg && msg.file_ids) msg.file_ids = JSON.parse(msg.file_ids);
+    
+    // Добавляем информацию об отправителе если нужно
+    if (msg && msg.sender_id && !msg.sender_username) {
+      const sender = db.prepare('SELECT username, userId FROM users WHERE id = ?').get(msg.sender_id);
+      if (sender) {
+        msg.sender_username = sender.username;
+        msg.sender_userId = sender.userId;
+      }
+    }
+    
     return msg;
   },
   getConversationMessages: async (conversationId, limit = 50, offset = 0) => {

@@ -3,7 +3,7 @@ import { useAuthContext } from './auth/AuthContext';
 
 export default function FileViewer({ fileId, fileMeta = {} }) {
   const { user } = useAuthContext();
-  const userId = user?.userId;
+  const userId = user?.id;
   const [srcUrl, setSrcUrl] = useState(null);
   const [textContent, setTextContent] = useState(null);
   const [loading, setLoading] = useState(true);

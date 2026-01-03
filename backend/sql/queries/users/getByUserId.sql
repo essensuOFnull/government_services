@@ -1,1 +1,1 @@
-SELECT * FROM users WHERE userId = ?
+SELECT * FROM users WHERE id = ?

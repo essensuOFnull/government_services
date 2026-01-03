@@ -8,7 +8,7 @@ export default function MenuWindow({ userId }) {
 	const [activeTab, setActiveTab] = useState(0);
 	const { openWindow } = useWindowsManager();
 	const { user } = useAuth();
-	const effectiveUserId = userId || user?.userId;
+	const effectiveUserId = userId || user?.id;
 	const group_link="https://t.me/c/3601903002";
 	const threads_id={
 		ПРКПН:4,

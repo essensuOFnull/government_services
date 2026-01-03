@@ -1,5 +1,6 @@
 import React from 'react';
 import FileItem from './FileItem';
+import Avatar from './Avatar';
 import { useAuthContext } from './auth/AuthContext';
 
 export default function Message({ msg, fileMeta = new Map(), users = new Map(), onDelete }) {
@@ -15,6 +16,7 @@ export default function Message({ msg, fileMeta = new Map(), users = new Map(), 
 
   const senderId = msg.sender_id || msg.senderId || msg.user_id || (msg.sender && msg.sender.id) || null;
   const senderFromMap = senderId ? users.get(senderId) : null;
+  
   const senderName = (msg.sender_username && msg.sender_username !== 'online:' && msg.sender_username !== 'null')
     ? msg.sender_username
     : (senderFromMap && (senderFromMap.username || senderFromMap.displayName || senderFromMap.name))
@@ -23,15 +25,24 @@ export default function Message({ msg, fileMeta = new Map(), users = new Map(), 
 
   return (
     <div className="message">
-      <strong>{senderName}:</strong>
-      <div className="message-content">{msg.content}</div>
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '8px' }}>
+        <Avatar 
+          userId={senderId}
+          username={senderName}
+          size={32}
+        />
+        <div>
+          <strong>{senderName}</strong>
+          <div className="message-content">{msg.content}</div>
+        </div>
+      </div>
 
-      {(user && (user.userId === msg.sender_username || user.username === msg.sender_username || user.id === msg.sender_id)) && (
+      {(user && (user.id === msg.sender_username || user.username === msg.sender_username || user.id === msg.sender_id)) && (
         <div className="message-controls">
           <button onClick={async () => {
             if (!confirm('Удалить сообщение? Это действие нельзя отменить.')) return;
             try {
-              const resp = await fetch(`/api/messenger/delete-message/${msg.id}`, { method: 'DELETE', headers: { 'x-user-id': user.userId } });
+              const resp = await fetch(`/api/messenger/delete-message/${msg.id}`, { method: 'DELETE', headers: { 'x-user-id': user.id } });
               const j = await resp.json();
               if (resp.ok && j.success) {
                 if (typeof onDelete === 'function') onDelete(msg.id, j.storageInfo);

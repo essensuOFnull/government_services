@@ -60,21 +60,21 @@ export const api = {
     });
   },
 
-  async changeUsername(userId, newUsername) {
+  async changeUsername(id, newUsername) {
     return this.request('/change-username', {
       method: 'POST',
-      body: JSON.stringify({ userId, newUsername })
+      body: JSON.stringify({ id, newUsername })
     });
   },
 
-  async changePassword(userId, newPassword) {
+  async changePassword(id, newPassword) {
     return this.request('/change-password', {
       method: 'POST',
-      body: JSON.stringify({ userId, newPassword })
+      body: JSON.stringify({ id, newPassword })
     });
   },
 
-  async getUser(userId) {
-    return this.request(`/user/${userId}`);
+  async getUser(id) {
+    return this.request(`/user/${id}`);
   }
 };

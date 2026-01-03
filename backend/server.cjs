@@ -105,16 +105,16 @@ app.post('/api/login', async (req, res) => {
 
 app.post('/api/change-username', async (req, res) => {
   try {
-    const { userId, newUsername } = req.body;
+    const { id, newUsername } = req.body;
     
-    if (!userId) {
+    if (!id) {
       return res.status(400).json({
         success: false,
         message: 'Требуется ID пользователя'
       });
     }
 
-    await auth.changeUsername(userId, newUsername);
+    await auth.changeUsername(id, newUsername);
     
     res.json({
       success: true,
@@ -131,16 +131,16 @@ app.post('/api/change-username', async (req, res) => {
 
 app.post('/api/change-password', async (req, res) => {
   try {
-    const { userId, newPassword } = req.body;
+    const { id, newPassword } = req.body;
     
-    if (!userId) {
+    if (!id) {
       return res.status(400).json({
         success: false,
         message: 'Требуется ID пользователя'
       });
     }
 
-    await auth.changePassword(userId, newPassword);
+    await auth.changePassword(id, newPassword);
     
     res.json({
       success: true,
@@ -155,10 +155,10 @@ app.post('/api/change-password', async (req, res) => {
   }
 });
 
-app.get('/api/user/:userId', async (req, res) => {
+app.get('/api/user/:id', async (req, res) => {
   try {
-    const { userId } = req.params;
-    const user = await auth.getUserById(userId);
+    const { id } = req.params;
+    const user = await auth.getUserById(id);
     
     if (!user) {
       return res.status(404).json({

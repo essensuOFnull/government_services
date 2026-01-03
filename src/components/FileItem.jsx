@@ -5,7 +5,7 @@ import FileViewer from './FileViewer';
 export default function FileItem({ fileId, fileMeta = {} }) {
   const { openWindow, closeWindow } = useWindowsManager();
   const { user } = useAuthContext();
-  const userId = user?.userId;
+  const userId = user?.id;
   const [previewUrl, setPreviewUrl] = useState(null);
 
   const mime = fileMeta.mime_type || '';

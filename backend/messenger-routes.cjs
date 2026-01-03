@@ -51,19 +51,17 @@ const authenticateUser = (req, res, next) => {
     });
   }
 
-  // Ищем пользователя по userId (который уже должен существовать с момента регистрации)
-  let user = Users.getByUserId(userId);
+  // Ищем пользователя по id
+  let user = Users.getById(userId);
 
-  // Если пользователя нет — создадим минимальную запись для совместимости
+  // Если пользователя нет — создадим запись для совместимости
   if (!user) {
     try {
       Users.create(userId, userId);
-      user = Users.getByUserId(userId);
-      console.log(`Created messenger user for userId=${userId}`);
+      user = Users.getById(userId);
+      console.log(`Created messenger user for id=${userId}`);
     } catch (err) {
-      // Если не удалось создать (например, пользователь уже существует),
-      // попробуем получить его ещё раз
-      user = Users.getByUserId(userId);
+      user = Users.getById(userId);
       if (!user) {
         console.error('Failed to create or find messenger user:', err);
         return res.status(500).json({ success: false, message: 'Ошибка создания пользователя' });
@@ -280,7 +278,7 @@ router.get('/download-file/:fileId', authenticateUser, async (req, res) => {
           const convData = db.prepare('SELECT participant_ids FROM conversations WHERE id = ?').get(msg.conversation_id);
           if (convData) {
             const participants = JSON.parse(convData.participant_ids);
-            if (participants.includes(req.user.userId)) {
+            if (participants.includes(req.user.id)) {
               hasAccess = true;
               break;
             }
@@ -347,6 +345,7 @@ router.get('/file/:fileId', authenticateUser, (req, res) => {
   try {
     const { fileId } = req.params;
     const file = FilesDB.getById(fileId);
+    console.log(`[/file/${fileId}] Found in DB:`, file ? 'YES' : 'NO');
     if (!file) return res.status(404).json({ success: false, message: 'File not found' });
 
     // Проверяем доступ к файлу
@@ -369,7 +368,7 @@ router.get('/file/:fileId', authenticateUser, (req, res) => {
           const convData = db.prepare('SELECT participant_ids FROM conversations WHERE id = ?').get(msg.conversation_id);
           if (convData) {
             const participants = JSON.parse(convData.participant_ids);
-            if (participants.includes(req.user.userId)) {
+            if (participants.includes(req.user.id)) {
               hasAccess = true;
               break;
             }
@@ -417,7 +416,7 @@ router.post('/preview-token/:fileId', authenticateUser, (req, res) => {
           const convData = db.prepare('SELECT participant_ids FROM conversations WHERE id = ?').get(msg.conversation_id);
           if (convData) {
             const participants = JSON.parse(convData.participant_ids);
-            if (participants.includes(req.user.userId)) { hasAccess = true; break; }
+            if (participants.includes(req.user.id)) { hasAccess = true; break; }
           }
         }
       }
@@ -429,7 +428,7 @@ router.post('/preview-token/:fileId', authenticateUser, (req, res) => {
     // Для медиа (audio/video) даём более длинный TTL, чтобы браузер мог поддерживать длительный стрим/seek
     const isMedia = (file.mime_type || '').startsWith('audio/') || (file.mime_type || '').startsWith('video/');
     const ttl = isMedia ? (60 * 60 * 1000) : (2 * 60 * 1000); // 1 час для медиа, 2 минуты для прочего
-    previewTokens.set(token, { fileId, userId: req.user.userId, expiresAt: Date.now() + ttl });
+    previewTokens.set(token, { fileId, userId: req.user.id, expiresAt: Date.now() + ttl });
 
     res.json({ success: true, token, expiresInMs: ttl });
   } catch (err) {
@@ -610,8 +609,8 @@ router.post('/conversation/create', authenticateUser, (req, res) => {
     }
 
     // Добавляем текущего пользователя если его нет (используем userId, а не id)
-    if (!participantIds.includes(req.user.userId)) {
-      participantIds.push(req.user.userId);
+    if (!participantIds.includes(req.user.id)) {
+      participantIds.push(req.user.id);
     }
 
     const conversation = Conversations.getOrCreate(participantIds);
@@ -632,13 +631,13 @@ router.post('/conversation/create', authenticateUser, (req, res) => {
 // Получение разговоров пользователя
 router.get('/conversations', authenticateUser, (req, res) => {
   try {
-    const conversations = Conversations.getUserConversations(req.user.userId);
+    const conversations = Conversations.getUserConversations(req.user.id);
 
     // Обогащаем разговоры информацией о других участниках
     const enrichedConversations = conversations.map(conv => {
       // Защита: убедимся, что participantIds - это массив
       const participants = Array.isArray(conv.participantIds) ? conv.participantIds : [];
-      const otherParticipants = participants.filter(pid => pid !== req.user.userId);
+      const otherParticipants = participants.filter(pid => pid !== req.user.id);
       
       let title = 'Избранное';
       if (otherParticipants.length > 0) {
@@ -789,13 +788,187 @@ router.post('/preview-release/:token', authenticateUser, (req, res) => {
     const { token } = req.params;
     const rec = previewTokens.get(token);
     if (!rec) return res.status(404).json({ success: false, message: 'Token not found' });
-    if (rec.userId !== req.user.userId) return res.status(403).json({ success: false, message: 'Not token owner' });
+    if (rec.userId !== req.user.id) return res.status(403).json({ success: false, message: 'Not token owner' });
 
     previewTokens.delete(token);
     res.json({ success: true });
   } catch (err) {
     console.error('preview-release error', err);
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Upload avatar
+router.post('/avatar/upload', 
+  authenticateUser,
+  upload.single('avatar'),
+  handleMulterError,
+  async (req, res) => {
+    try {
+      const userId = req.user.id; // UUID пользователя
+      
+      if (!req.file) {
+        return res.status(400).json({ success: false, message: 'Файл не загружен' });
+      }
+
+      const file = req.file;
+      const MAX_AVATAR_SIZE = 64 * 1024 * 1024; // 64MB
+
+      if (file.size > MAX_AVATAR_SIZE) {
+        fs.unlinkSync(file.path);
+        return res.status(413).json({ 
+          success: false, 
+          message: `Размер аватарки не должен превышать ${MAX_AVATAR_SIZE / (1024 * 1024)}MB` 
+        });
+      }
+
+      const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/svg+xml'];
+      if (!allowedMimes.includes(file.mimetype)) {
+        fs.unlinkSync(file.path);
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Поддерживаются только PNG, JPEG, GIF или SVG' 
+        });
+      }
+
+      const fileId = uuid();
+      const s3Key = await s3Service.uploadFile(fileId, file.path, file.originalname);
+
+      // Создаем запись о файле аватарки
+      FilesDB.create(
+        fileId,
+        file.originalname,
+        file.mimetype,
+        file.size,
+        s3Key,
+        userId,
+        userId
+      );
+
+      // Удаляем старую аватарку если существует
+      if (req.user && req.user.avatar_file_id) {
+        try {
+          const oldFile = FilesDB.getById(req.user.avatar_file_id);
+          if (oldFile) {
+            await s3Service.deleteFile(oldFile.s3_key);
+            FilesDB.delete(oldFile.id);
+          }
+        } catch (e) {
+          console.error('Error deleting old avatar:', e);
+        }
+      }
+
+      // Обновляем user с новой аватаркой
+      Users.update(userId, { avatar_file_id: fileId });
+
+      // Очищаем локальный файл
+      try {
+        fs.unlinkSync(file.path);
+      } catch (e) {
+        console.error('Error deleting temp file:', e);
+      }
+
+      res.json({ 
+        success: true, 
+        message: 'Аватарка загружена успешно',
+        file: {
+          id: fileId,
+          original_filename: file.originalname,
+          mime_type: file.mimetype,
+          size: file.size,
+          s3_key: s3Key
+        }
+      });
+    } catch (error) {
+      console.error('Avatar upload error:', error);
+      if (req.file) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
+      res.status(500).json({ 
+        success: false, 
+        message: error.message 
+      });
+    }
+  }
+);
+
+// Delete avatar
+router.delete('/avatar', authenticateUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = Users.getById(userId);
+
+    if (!user || !user.avatar_file_id) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Аватарка не найдена' 
+      });
+    }
+
+    const avatarFile = FilesDB.getById(user.avatar_file_id);
+    if (avatarFile) {
+      await s3Service.deleteFile(avatarFile.s3_key);
+      FilesDB.delete(avatarFile.id);
+    }
+
+    Users.update(userId, { avatar_file_id: null });
+
+    res.json({ 
+      success: true, 
+      message: 'Аватарка удалена' 
+    });
+  } catch (error) {
+    console.error('Avatar delete error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+});
+
+// Get avatar
+router.get('/avatar/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = Users.getById(userId);
+
+    if (!user || !user.avatar_file_id) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Аватарка не найдена' 
+      });
+    }
+
+    const avatarFile = FilesDB.getById(user.avatar_file_id);
+    if (!avatarFile) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Файл аватарки не найден' 
+      });
+    }
+
+    const tempPath = path.join(uploadsDir, uuid() + path.extname(avatarFile.original_filename));
+    await s3Service.downloadFile(avatarFile.s3_key, tempPath);
+
+    res.setHeader('Content-Type', avatarFile.mime_type);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    
+    const stream = fs.createReadStream(tempPath);
+    stream.on('end', () => {
+      try {
+        fs.unlinkSync(tempPath);
+      } catch (e) {}
+    });
+    
+    stream.pipe(res);
+  } catch (error) {
+    console.error('Avatar get error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
   }
 });
 

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useAuthContext } from './AuthContext';
 import { useWindowsManager } from '../../hooks/useWindowsManager';
+import Avatar from '../Avatar';
 
 const ProfileWindow = ({ onClose }) => {
   const { 
@@ -8,7 +9,8 @@ const ProfileWindow = ({ onClose }) => {
     logout, 
     changeUsername, 
     changePassword,
-    loading 
+    loading,
+    updateUser
   } = useAuthContext();
   const { closeAllWindows } = useWindowsManager();
   
@@ -17,6 +19,9 @@ const ProfileWindow = ({ onClose }) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [avatarLoading, setAvatarLoading] = useState(false);
+  const [avatarRefresh, setAvatarRefresh] = useState(0);
+  const fileInputRef = useRef(null);
 
   const handleUsernameChange = async (e) => {
     e.preventDefault();
@@ -67,6 +72,86 @@ const ProfileWindow = ({ onClose }) => {
     closeAllWindows();
   };
 
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const MAX_SIZE = 64 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      setError(`Размер аватарки не должен превышать ${MAX_SIZE / (1024 * 1024)}MB`);
+      return;
+    }
+
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/svg+xml'];
+    if (!allowedMimes.includes(file.type)) {
+      setError('Поддерживаются только PNG, JPEG, GIF или SVG');
+      return;
+    }
+
+    setAvatarLoading(true);
+    setMessage('');
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+
+      const response = await fetch('/api/messenger/avatar/upload', {
+        method: 'POST',
+        headers: { 'x-user-id': user.id },
+        body: formData
+      });
+
+      const json = await response.json();
+      if (response.ok && json.success) {
+        setMessage('Аватарка загружена успешно');
+        setAvatarRefresh(prev => prev + 1);
+        if (updateUser) {
+          updateUser({ ...user, avatar_file_id: json.file.id });
+        }
+      } else {
+        setError(json.message || 'Ошибка загрузки аватарки');
+      }
+    } catch (err) {
+      console.error('Avatar upload error:', err);
+      setError('Ошибка загрузки аватарки');
+    } finally {
+      setAvatarLoading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleAvatarDelete = async () => {
+    if (!confirm('Вы уверены? Аватарка будет удалена навсегда.')) return;
+
+    setAvatarLoading(true);
+    setMessage('');
+    setError('');
+
+    try {
+      const response = await fetch('/api/messenger/avatar', {
+        method: 'DELETE',
+        headers: { 'x-user-id': user.id }
+      });
+
+      const json = await response.json();
+      if (response.ok && json.success) {
+        setMessage('Аватарка удалена');
+        setAvatarRefresh(prev => prev + 1);
+        if (updateUser) {
+          updateUser({ ...user, avatar_file_id: null });
+        }
+      } else {
+        setError(json.message || 'Ошибка удаления аватарки');
+      }
+    } catch (err) {
+      console.error('Avatar delete error:', err);
+      setError('Ошибка удаления аватарки');
+    } finally {
+      setAvatarLoading(false);
+    }
+  };
+
   if (!user) {
     return <div>Не авторизован</div>;
   }
@@ -90,7 +175,15 @@ const ProfileWindow = ({ onClose }) => {
       <p><strong>Профиль пользователя</strong></p>
       
       <div className='window' style={{padding:'16px'}}>
-        <p><strong>ID:</strong> {user.userId}</p>
+        <div style={{ marginBottom: '16px' }}>
+          <Avatar 
+            userId={user.id} 
+            username={user.username} 
+            size={80}
+            key={avatarRefresh}
+          />
+        </div>
+        <p><strong>ID:</strong> {user.id}</p>
         <p><strong>Имя пользователя:</strong> {user.username}</p>
         <p><strong>Роль:</strong> {getRoleName(user.role)}</p>
         <p><strong>Лимит хранилища:</strong> {formatStorage(user.storageLimit)}</p>
@@ -112,6 +205,35 @@ const ProfileWindow = ({ onClose }) => {
           {error}
         </div>
       )}
+
+      <div className='window' style={{padding:'16px'}}>
+        <p><strong>Аватарка профиля</strong></p>
+        <div style={{ marginBottom: '12px' }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/svg+xml"
+            onChange={handleAvatarUpload}
+            style={{ display: 'none' }}
+          />
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            disabled={avatarLoading || loading}
+          >
+            📷 Загрузить аватарку
+          </button>
+        </div>
+        {user.avatar_file_id && (
+          <button 
+            onClick={handleAvatarDelete}
+            disabled={avatarLoading || loading}
+            style={{ marginTop: '8px' }}
+          >
+            🗑️ Удалить аватарку
+          </button>
+        )}
+      </div>
+
       <div className='window' style={{padding:'16px'}}>
         <p><strong>Сменить имя пользователя</strong></p>
         <form onSubmit={handleUsernameChange}>
