@@ -13,7 +13,9 @@ class S3Service {
   // Ключ формируется как files/{fileId}/{filename}
   async uploadFile(fileId, filePath, filename) {
     try {
-      const destKey = `files/${fileId}/${filename}`;
+      // sanitize filename to avoid path separators or null bytes
+      const safeFilename = String(filename).replace(/[\/\0]/g, '_');
+      const destKey = `files/${fileId}/${safeFilename}`;
 
       if (EMBED_S3) {
         const destPath = path.join(STORAGE_DIR, BUCKET_NAME, destKey);
@@ -82,7 +84,8 @@ class S3Service {
 
   getS3Url(s3Key) {
     // Встроенный путь через API
-    return `/api/s3/${BUCKET_NAME}/${s3Key}`;
+    // используем encodeURI чтобы сохранить слэши, но корректно закодировать UTF-8 символы (кириллица и пр.)
+    return `/api/s3/${BUCKET_NAME}/${encodeURI(s3Key)}`;
   }
 }
 

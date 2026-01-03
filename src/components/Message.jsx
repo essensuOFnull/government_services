@@ -1,8 +1,10 @@
 import React from 'react';
 import FileItem from './FileItem';
+import { useAuthContext } from './auth/AuthContext';
 
-export default function Message({ msg, fileMeta = new Map(), users = new Map()}) {
+export default function Message({ msg, fileMeta = new Map(), users = new Map(), onDelete }) {
   const files = msg.file_ids || [];
+  const { user } = useAuthContext();
 
   const formatTime = (val) => {
     try {
@@ -23,6 +25,26 @@ export default function Message({ msg, fileMeta = new Map(), users = new Map()})
     <div className="message">
       <strong>{senderName}:</strong>
       <div className="message-content">{msg.content}</div>
+
+      {(user && (user.userId === msg.sender_username || user.username === msg.sender_username || user.id === msg.sender_id)) && (
+        <div className="message-controls">
+          <button onClick={async () => {
+            if (!confirm('Удалить сообщение? Это действие нельзя отменить.')) return;
+            try {
+              const resp = await fetch(`/api/messenger/delete-message/${msg.id}`, { method: 'DELETE', headers: { 'x-user-id': user.userId } });
+              const j = await resp.json();
+              if (resp.ok && j.success) {
+                if (typeof onDelete === 'function') onDelete(msg.id, j.storageInfo);
+              } else {
+                alert(j.message || 'Не удалось удалить сообщение');
+              }
+            } catch (e) {
+              console.error('delete message error', e);
+              alert('Ошибка удаления сообщения');
+            }
+          }}>Удалить</button>
+        </div>
+      )}
 
       {files.length > 0 && (
         <div className="message-files">

@@ -54,14 +54,9 @@ const storage = multer.diskStorage({
   }
 });
 
-// Фильтр для валидации MIME-типов
+// Фильтр: принимаем любые типы файлов — валидация MIME пусть будет логической (UI/preview),
+// но мы не отклоняем загрузку на этапе multipart, чтобы сохранять любые файлы.
 const fileFilter = (req, file, cb) => {
-  const mimeType = file.mimetype;
-
-  if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
-    return cb(new Error(`MIME тип ${mimeType} не разрешен`), false);
-  }
-
   cb(null, true);
 };
 
@@ -190,23 +185,15 @@ const handleMulterError = (err, req, res, next) => {
   next(err);
 };
 
-// Валидация MIME-типа перед сохранением
+// Валидация MIME-типа (не блокирует загрузку): помечаем в запросе, пригодно для логики предпросмотра
 const validateMimeType = (req, res, next) => {
-  if (!req.file) {
-    return next();
+  if (!req.file) return next();
+  try {
+    const mimeType = req.file.mimetype;
+    req.file._mimeAllowed = ALLOWED_MIME_TYPES.includes(mimeType);
+  } catch (e) {
+    req.file._mimeAllowed = false;
   }
-
-  const mimeType = req.file.mimetype;
-
-  if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
-    // Удаляем загруженный файл
-    fs.unlinkSync(req.file.path);
-    return res.status(415).json({
-      success: false,
-      message: `MIME тип ${mimeType} не разрешен`
-    });
-  }
-
   next();
 };
 

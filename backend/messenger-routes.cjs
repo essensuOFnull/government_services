@@ -110,7 +110,6 @@ router.post('/upload-file',
   authenticateUser,
   checkStorageQuota,
   upload.single('file'),
-  validateMimeType,
   async (req, res) => {
     try {
       if (!req.file) {
@@ -134,16 +133,25 @@ router.post('/upload-file',
       }
 
       // Загружаем в S3
+      // Normalize original filename: multer/busboy may decode using latin1, convert to UTF-8
+      const originalName = (() => {
+        try {
+          return Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+        } catch (e) {
+          return req.file.originalname || String(fileId);
+        }
+      })();
+
       const s3Key = await s3Service.uploadFile(
         fileId,
         req.file.path,
-        req.file.originalname
+        originalName
       );
 
-      // Сохраняем в БД
+      // Сохраняем в БД (используем нормализованное имя)
       const fileRecord = FilesDB.create(
         fileId,
-        req.file.originalname,
+        originalName,
         req.file.mimetype,
         req.file.size,
         s3Key,
@@ -170,6 +178,65 @@ router.post('/upload-file',
         success: false,
         message: error.message
       });
+    }
+  }
+);
+
+// Загрузка нескольких файлов в одном запросе
+router.post('/upload-files',
+  authenticateUser,
+  checkStorageQuota,
+  upload.array('files'),
+  async (req, res) => {
+    try {
+      if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+        return res.status(400).json({ success: false, message: 'Файлы не загружены' });
+      }
+
+      const uploaded = [];
+      const conversationId = req.body.conversationId;
+
+      for (const f of req.files) {
+        // Проверяем квоту
+        const canAdd = storageManager.canAddFile(req.user.id, f.size);
+        if (!canAdd.allowed) {
+          // удаляем локальную копию и пропускаем
+          try { fs.unlinkSync(f.path); } catch (e) {}
+          continue;
+        }
+
+        const fileId = uuid();
+          // Normalize filename for each uploaded file
+          const originalName = (() => {
+            try { return Buffer.from(f.originalname, 'latin1').toString('utf8'); } catch (e) { return f.originalname || String(fileId); }
+          })();
+          const s3Key = await s3Service.uploadFile(fileId, f.path, originalName);
+
+        const fileRecord = FilesDB.create(
+          fileId,
+          originalName,
+          f.mimetype,
+          f.size,
+          s3Key,
+          req.user.id
+        );
+
+        storageManager.addFileToQuota(req.user.id, f.size);
+
+        try { fs.unlinkSync(f.path); } catch (e) {}
+
+        uploaded.push(fileRecord);
+      }
+
+      res.json({ success: true, files: uploaded, storageInfo: storageManager.getStorageInfo(req.user.id) });
+    } catch (error) {
+      console.error('Ошибка множественной загрузки файлов:', error);
+      if (req.files) {
+        for (const f of req.files) {
+          try { if (fs.existsSync(f.path)) fs.unlinkSync(f.path); } catch (e) {}
+        }
+      }
+      res.status(500).json({ success: false, message: error.message });
     }
   }
 );
@@ -233,7 +300,10 @@ router.get('/download-file/:fileId', authenticateUser, async (req, res) => {
     const s3Url = s3Service.getS3Url(file.s3_key);
 
     // Перенаправляем на S3 с правильным именем файла
-    res.set('Content-Disposition', `attachment; filename="${file.original_filename}"`);
+    // Указываем оба поля: `filename` (старые клиенты) и `filename*` (RFC 5987 для UTF-8)
+    const fallbackName = (file.original_filename || file.id).replace(/"/g, '');
+    const filenameStar = `UTF-8''${encodeURIComponent(fallbackName)}`;
+    res.set('Content-Disposition', `attachment; filename="${fallbackName}"; filename*=${filenameStar}`);
     res.set('Content-Type', file.mime_type || 'application/octet-stream');
     
     // Используем S3 URL для скачивания
@@ -461,6 +531,69 @@ router.delete('/delete-file/:fileId', authenticateUser, async (req, res) => {
       success: false,
       message: error.message
     });
+  }
+});
+
+// Удаление сообщения: если файлы не пересылали — удаляем файла полностью,
+// если файл присутствует в других сообщениях — передаём владение тому, кто переслал
+router.delete('/delete-message/:messageId', authenticateUser, async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const message = await Messages.getById(messageId);
+    if (!message) return res.status(404).json({ success: false, message: 'Сообщение не найдено' });
+
+    // Разрешено удалять только отправителю
+    if (message.sender_id !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Только отправитель может удалить сообщение' });
+    }
+
+    const fileIds = Array.isArray(message.file_ids) ? message.file_ids : [];
+
+    for (const fid of fileIds) {
+      // Узнаём текущее число ссылок
+      const refs = db.prepare('SELECT COUNT(*) as c FROM file_references WHERE file_id = ?').get(fid);
+      const count = refs ? (refs.c || 0) : 0;
+
+      if (count <= 1) {
+        // никто больше не ссылается — удаляем файл полностью
+        const file = FilesDB.getById(fid);
+        if (file) {
+          try {
+            await s3Service.deleteFile(file.s3_key);
+          } catch (e) { console.error('Ошибка удаления s3 файла:', e); }
+          FilesDB.permanentlyDelete(fid);
+          // вычитаем размер из квоты текущего владельца
+          try { storageManager.removeFileFromQuota(file.owner_id, file.size || 0); } catch (e) { console.error('quota adjust error', e); }
+        }
+      } else {
+        // есть другие ссылки — передаём владение первому другому ссылочнику (переславшему)
+        const other = db.prepare('SELECT message_id FROM file_references WHERE file_id = ? AND message_id != ? LIMIT 1').get(fid, messageId);
+        if (other && other.message_id) {
+          const msg = db.prepare('SELECT sender_id FROM messages WHERE id = ?').get(other.message_id);
+          if (msg && msg.sender_id) {
+            // Передаём владение и скорректируем квоты: убираем у старого владельца и добавляем новому
+            const file = FilesDB.getById(fid);
+            const oldOwner = file ? file.owner_id : null;
+            FilesDB.forwardOwnership(fid, msg.sender_id);
+            try {
+              if (oldOwner) storageManager.removeFileFromQuota(oldOwner, file.size || 0);
+              storageManager.addFileToQuota(msg.sender_id, file.size || 0);
+            } catch (e) { console.error('quota transfer error', e); }
+          }
+        }
+      }
+
+      // Удаляем ссылку из file_references для этого сообщения
+      try { FilesDB.removeReference(fid, messageId); } catch (e) { /* ignore */ }
+    }
+
+    // Удаляем само сообщение (логическое удаление)
+    Messages.delete(messageId);
+
+    res.json({ success: true, message: 'Сообщение удалено', storageInfo: storageManager.getStorageInfo(req.user.id) });
+  } catch (err) {
+    console.error('delete-message error', err);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 

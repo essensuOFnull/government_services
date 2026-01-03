@@ -7,6 +7,7 @@ export function Messenger({ userId }) {
   const [currentConversation, setCurrentConversation] = useState(null);
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
+  const [attachments, setAttachments] = useState([]);
   const [storageInfo, setStorageInfo] = useState(null);
   const [users, setUsers] = useState(new Map());
   const [onlineUsers, setOnlineUsers] = useState(new Set());
@@ -288,19 +289,49 @@ export function Messenger({ userId }) {
   }, [messages]);
 
   const handleSendMessage = async () => {
-    if (!messageInput.trim() || !currentConversation) return;
+    if (!messageInput.trim() && attachments.length === 0) return;
+    if (!currentConversation) return;
 
     const content = messageInput;
     setMessageInput('');
 
-    // Отправляем по WebSocket
+    // Если есть вложения — сперва загружаем их в API одним запросом
+    let uploadedFileIds = [];
+    if (attachments.length > 0) {
+      try {
+        const formData = new FormData();
+        attachments.forEach(f => formData.append('files', f));
+        formData.append('conversationId', currentConversation);
+
+        const resp = await fetch('/api/messenger/upload-files', {
+          method: 'POST',
+          headers: { 'x-user-id': userId },
+          body: formData
+        });
+        const j = await resp.json();
+        if (j.success && Array.isArray(j.files)) {
+          uploadedFileIds = j.files.map(f => f.id);
+          if (j.storageInfo) setStorageInfo(j.storageInfo);
+        } else {
+          console.error('Ошибка загрузки вложений', j && j.message);
+        }
+      } catch (e) {
+        console.error('Ошибка при загрузке вложений', e);
+      }
+    }
+
+    // Отправляем сообщение по WebSocket (включая ссылки на файлы если есть)
     wsRef.current?.send(JSON.stringify({
       type: 'send_message',
       data: {
         conversationId: currentConversation,
-        content
+        content,
+        fileIds: uploadedFileIds
       }
     }));
+
+    // Очистим список вложений после отправки
+    setAttachments([]);
   };
 
   const handleTyping = () => {
@@ -326,88 +357,29 @@ export function Messenger({ userId }) {
   };
 
   const handleFileUpload = async (e) => {
-    const files = e.target.files;
-    if (!files || !currentConversation) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length || !currentConversation) return;
 
-    // Determine quota/free space if available
-    let projectedUsed = storageInfo?.quota?.usedBytes || 0;
-    const userLimit = storageInfo?.quota?.limitBytes ?? null;
-    const serverFree = storageInfo?.serverStatus?.freeBytes ?? null;
-
-    for (const file of files) {
-      // Pre-check: will this file make user exceed their quota?
-      if (userLimit != null && projectedUsed + file.size > userLimit) {
-        alert(`Нельзя загрузить "${file.name}": превысится лимит пользователя.`);
-        continue;
-      }
-
-      // Pre-check: server has enough free space for this file?
-      if (serverFree != null && file.size > serverFree) {
-        alert(`Нельзя загрузить "${file.name}": на сервере недостаточно места.`);
-        continue;
-      }
-
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('conversationId', currentConversation);
-
-      // Уведомляем об начале загрузки
-      wsRef.current?.send(JSON.stringify({
-        type: 'upload_start',
-        data: {
-          conversationId: currentConversation,
-          filename: file.name,
-          fileSize: file.size
-        }
-      }));
-
-      try {
-        const response = await fetch('/api/messenger/upload-file', {
-          method: 'POST',
-          headers: { 'x-user-id': userId },
-          body: formData
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-          // Отправляем сообщение с файлом
-          wsRef.current?.send(JSON.stringify({
-            type: 'send_message',
-            data: {
-              conversationId: currentConversation,
-              content: `Отправил(а) файл: ${file.name}`,
-              fileIds: [data.file.id]
-            }
-          }));
-
-          // Обновляем информацию о хранилище
-          if (data.storageInfo) {
-            setStorageInfo(data.storageInfo);
-            // sync projectedUsed from server response if available
-            projectedUsed = data.storageInfo.quota?.usedBytes ?? projectedUsed + file.size;
-          } else {
-            projectedUsed += file.size;
-          }
-        } else {
-          console.error('Ошибка загрузки файла:', data.message);
-        }
-      } catch (error) {
-        console.error('Ошибка загрузки файла:', error);
-      } finally {
-        // Уведомляем об завершении загрузки
-        wsRef.current?.send(JSON.stringify({
-          type: 'upload_complete',
-          data: {
-            conversationId: currentConversation,
-            filename: file.name
-          }
-        }));
-      }
-    }
-
-    // Очищаем input
+    // Добавляем выбранные файлы в список вложений (не отправляем сразу)
+    setAttachments(prev => [...prev, ...files]);
     e.target.value = '';
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer?.files || []);
+    if (files.length && currentConversation) {
+      setAttachments(prev => [...prev, ...files]);
+    }
+  };
+
+  const removeAttachment = (index) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const removeMessageFromList = (messageId, storageInfoUpdate) => {
+    setMessages(prev => prev.filter(m => m.id !== messageId));
+    if (storageInfoUpdate) setStorageInfo(storageInfoUpdate);
   };
 
   const getStorageDisplay = () => {
@@ -480,7 +452,7 @@ export function Messenger({ userId }) {
 
             <div className="messages-list" ref={messageListRef}>
               {messages.map(msg => (
-                <Message key={msg.id} msg={msg} fileMeta={fileMeta} users={users} />
+                <Message key={msg.id} msg={msg} fileMeta={fileMeta} users={users} onDelete={removeMessageFromList} />
               ))}
               {typingUsers.size > 0 && (
                 <div className="typing-indicator">
@@ -497,7 +469,17 @@ export function Messenger({ userId }) {
               )}
             </div>
 
-            <div className="message-input-area">
+            <div className="message-input-area" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
+              {attachments.length > 0 && (
+                <div className="attachments-list">
+                  {attachments.map((f, idx) => (
+                    <div key={idx} className="attachment-item">
+                      <span>{f.name}</span>
+                      <button onClick={() => removeAttachment(idx)}>Удалить</button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <textarea
                 value={messageInput}
                 onChange={(e) => {

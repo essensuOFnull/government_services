@@ -24,10 +24,23 @@ export default function FileItem({ fileId, fileMeta = {} }) {
         const resp = await fetch(s3url, { headers: { 'x-user-id': userId } });
         if (!resp.ok) throw new Error('Download failed');
         const blob = await resp.blob();
+        // Попробуем получить корректное имя из заголовка Content-Disposition (с поддержкой filename*)
+        let suggestedName = filename;
+        try {
+          const cd = resp.headers.get('content-disposition') || '';
+          const mStar = /filename\*=(?:UTF-8'')?([^;\n\r]+)/i.exec(cd);
+          if (mStar && mStar[1]) {
+            suggestedName = decodeURIComponent(mStar[1].trim());
+          } else {
+            const m = /filename=\"([^\"]+)\"/i.exec(cd);
+            if (m && m[1]) suggestedName = m[1];
+          }
+        } catch (e) { /* ignore */ }
+
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = filename;
+        link.download = suggestedName;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
