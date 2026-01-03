@@ -48,8 +48,8 @@ export default function FileItem({ fileId, fileMeta = {} }) {
   };
 
   useEffect(() => {
-    // For media previews, request short-lived preview token and use same-origin preview URL
     let active = true;
+    let token = null;
     if (!(isImage || isVideo || isAudio) || !userId) return undefined;
 
     (async () => {
@@ -63,7 +63,7 @@ export default function FileItem({ fileId, fileMeta = {} }) {
           console.error('Failed to get preview token', j);
           return;
         }
-        const token = j.token;
+        token = j.token;
         const url = `/api/messenger/preview/${fileId}?token=${encodeURIComponent(token)}`;
         if (active) setPreviewUrl(url);
       } catch (err) {
@@ -71,8 +71,17 @@ export default function FileItem({ fileId, fileMeta = {} }) {
       }
     })();
 
-    return () => { active = false; setPreviewUrl(null); };
-  }, [s3url, userId, isImage, isVideo, isAudio]);
+    return () => {
+      active = false;
+      setPreviewUrl(null);
+      if (token) {
+        fetch(`/api/messenger/preview-release/${encodeURIComponent(token)}`, {
+          method: 'POST',
+          headers: { 'x-user-id': userId }
+        }).catch(() => {});
+      }
+    };
+  }, [fileId, userId, isImage, isVideo, isAudio]);
 
   return (
     <div className="file-item">

@@ -356,7 +356,9 @@ router.post('/preview-token/:fileId', authenticateUser, (req, res) => {
     if (!hasAccess) return res.status(403).json({ success: false, message: 'У вас нет доступа к этому файлу' });
 
     const token = generateToken();
-    const ttl = 2 * 60 * 1000; // 2 минуты
+    // Для медиа (audio/video) даём более длинный TTL, чтобы браузер мог поддерживать длительный стрим/seek
+    const isMedia = (file.mime_type || '').startsWith('audio/') || (file.mime_type || '').startsWith('video/');
+    const ttl = isMedia ? (60 * 60 * 1000) : (2 * 60 * 1000); // 1 час для медиа, 2 минуты для прочего
     previewTokens.set(token, { fileId, userId: req.user.userId, expiresAt: Date.now() + ttl });
 
     res.json({ success: true, token, expiresInMs: ttl });
@@ -367,6 +369,7 @@ router.post('/preview-token/:fileId', authenticateUser, (req, res) => {
 });
 
 // Endpoint для предпросмотра: проверяет токен и стримит файл (без авторизации по заголовку)
+// Поддерживает Range-запросы для медиа
 router.get('/preview/:fileId', async (req, res) => {
   try {
     const { fileId } = req.params;
@@ -376,23 +379,36 @@ router.get('/preview/:fileId', async (req, res) => {
     if (!record || record.fileId !== fileId || record.expiresAt <= Date.now()) {
       return res.status(403).json({ success: false, message: 'Invalid or expired token' });
     }
-
-    // Optionally delete token to make one-time
-    previewTokens.delete(token);
-
+    // Don't delete token immediately: allow multiple Range requests until TTL expires
     const file = FilesDB.getById(fileId);
     if (!file) return res.status(404).json({ success: false, message: 'File not found' });
 
     const s3Url = s3Service.getS3Url(file.s3_key);
-    res.set('Content-Type', file.mime_type || 'application/octet-stream');
+
+    // Forward Range header when present to support seeking
+    const rangeHeader = req.headers.range;
+    const fetchOptions = {};
+    if (rangeHeader) fetchOptions.headers = { Range: rangeHeader };
 
     try {
-      const response = await fetch(s3Url);
+      const response = await fetch(s3Url, fetchOptions);
       if (!response.ok) throw new Error(`S3 returned ${response.status}`);
+
+      // Forward relevant headers (Content-Type, Content-Range, Accept-Ranges, Content-Length)
+      const ct = response.headers.get('content-type');
+      if (ct) res.set('Content-Type', ct);
+      const cr = response.headers.get('content-range');
+      if (cr) res.set('Content-Range', cr);
+      const ar = response.headers.get('accept-ranges') || 'bytes';
+      res.set('Accept-Ranges', ar);
+      const cl = response.headers.get('content-length');
+      if (cl) res.set('Content-Length', cl);
+
+      res.status(response.status);
       response.body.pipe(res);
     } catch (fetchErr) {
       console.error('Preview fetch error:', fetchErr);
-      // Fallback: use s3Service.downloadFile into temp file then send
+      // Fallback: use s3Service.downloadFile into temp file then send (no range support)
       const tempPath = path.join(uploadsDir, `temp-preview-${fileId}`);
       try {
         await s3Service.downloadFile(file.s3_key, tempPath);
@@ -631,6 +647,22 @@ router.get('/user-files', authenticateUser, (req, res) => {
       success: false,
       message: error.message
     });
+  }
+});
+
+// Release preview token (called when user stops viewing)
+router.post('/preview-release/:token', authenticateUser, (req, res) => {
+  try {
+    const { token } = req.params;
+    const rec = previewTokens.get(token);
+    if (!rec) return res.status(404).json({ success: false, message: 'Token not found' });
+    if (rec.userId !== req.user.userId) return res.status(403).json({ success: false, message: 'Not token owner' });
+
+    previewTokens.delete(token);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('preview-release error', err);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
