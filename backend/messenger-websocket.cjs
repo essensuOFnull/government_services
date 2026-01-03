@@ -76,6 +76,10 @@ class MessengerWebSocketServer {
     const { type, data } = message;
 
     switch (type) {
+      case 'forward_message':
+        this.handleForwardMessage(userId, data);
+        break;
+
       case 'send_message':
         this.handleSendMessage(userId, data, ws);
         break;
@@ -121,6 +125,55 @@ class MessengerWebSocketServer {
     }
   }
 
+  async handleForwardMessage(userId, data) {
+    const { conversationId, originalMessageId } = data;
+    
+    try {
+      // Получаем исходное сообщение
+      const originalMessage = await Messages.getById(originalMessageId);
+      if (!originalMessage) {
+        throw new Error('Original message not found');
+      }
+      
+      // Создаем новое сообщение в целевом чате
+      const newMessageId = uuid();
+      
+      // Сохраняем пересланное сообщение в БД
+      const forwardedMessage = await Messages.create(
+        newMessageId,
+        conversationId,
+        userId,
+        originalMessage.content,
+        originalMessage.file_ids
+      );
+      
+      // Обновляем последнее сообщение в разговоре
+      Conversations.updateLastMessage(conversationId);
+      
+      // Получаем информацию об отправителе (кто переслал)
+      const user = Users.getById(userId);
+      const senderUsername = user?.username || userId;
+      
+      // Рассылаем новое сообщение всем участникам целевого чата
+      this.broadcastToConversation(conversationId, {
+        type: 'new_message',
+        message: {
+          id: forwardedMessage.id,
+          conversation_id: forwardedMessage.conversation_id,
+          sender_id: forwardedMessage.sender_id,
+          sender_username: senderUsername,
+          content: forwardedMessage.content,
+          file_ids: forwardedMessage.file_ids,
+          created_at: Date.now()
+        }
+      });
+      
+      console.log(`✅ Сообщение ${originalMessageId} переслано в чат ${conversationId}`);
+      
+    } catch (error) {
+      console.error('Ошибка пересылки сообщения:', error);
+    }
+  }
   async handleSendMessage(userId, data, ws) {
     const { conversationId, content, fileIds = [] } = data;
     const messageId = uuid();

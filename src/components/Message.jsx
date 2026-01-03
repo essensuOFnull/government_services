@@ -2,8 +2,9 @@ import React from 'react';
 import FileItem from './FileItem';
 import Avatar from './Avatar';
 import { useAuthContext } from './auth/AuthContext';
+import ForwardButton from './forward/ForwardButton';
 
-export default function Message({ msg, fileMeta = new Map(), users = new Map(), onDelete }) {
+export default function Message({ msg, fileMeta = new Map(), users = new Map(), onDelete, wsRef  }) {
   const files = msg.file_ids || [];
   const { user } = useAuthContext();
 
@@ -11,17 +12,56 @@ export default function Message({ msg, fileMeta = new Map(), users = new Map(), 
     try {
       const d = new Date(val);
       return d.toLocaleString('ru-RU');
-    } catch (e) { return '' + val; }
+    } catch (e) { 
+      return '' + val; 
+    }
   };
 
-  const senderId = msg.sender_id || msg.senderId || msg.user_id || (msg.sender && msg.sender.id) || null;
+  // Парсинг @username и рендер как ссылки
+  const renderContentWithMentions = (content) => {
+    if (!content) return null;
+    const parts = content.split(/(@[a-zA-Z0-9_]+)/g);
+    return parts.map((part, idx) => {
+      if (/^@[a-zA-Z0-9_]+$/.test(part)) {
+        const username = part.slice(1);
+        return (
+          <a
+            key={idx}
+            href="#"
+            className="mention-link"
+            onClick={e => {
+              e.preventDefault();
+              window.dispatchEvent(new CustomEvent('openUserProfile', { 
+                detail: { username } 
+              }));
+            }}
+          >
+            {part}
+          </a>
+        );
+      }
+      return part;
+    });
+  };
+
+  const senderId = msg.sender_id || msg.senderId || msg.user_id || 
+                  (msg.sender && msg.sender.id) || null;
   const senderFromMap = senderId ? users.get(senderId) : null;
   
-  const senderName = (msg.sender_username && msg.sender_username !== 'online:' && msg.sender_username !== 'null')
+  const senderName = (msg.sender_username && 
+                     msg.sender_username !== 'online:' && 
+                     msg.sender_username !== 'null')
     ? msg.sender_username
-    : (senderFromMap && (senderFromMap.username || senderFromMap.displayName || senderFromMap.name))
+    : (senderFromMap && (senderFromMap.username || 
+                        senderFromMap.displayName || 
+                        senderFromMap.name))
       || (msg.sender && (msg.sender.username || msg.sender.name))
-    || (senderId ? `пользователь #${senderId.substring(0, 8)}` : 'Неизвестный пользователь');
+      || (senderId ? `пользователь #${senderId.substring(0, 8)}` : 
+          'Неизвестный пользователь');
+
+  const isCurrentUser = user && 
+                       (user.id === senderId || 
+                        user.username === msg.sender_username);
 
   return (
     <div className="message">
@@ -31,39 +71,58 @@ export default function Message({ msg, fileMeta = new Map(), users = new Map(), 
           username={senderName}
           size={32}
         />
-        <div>
+        <div style={{ flex: 1 }}>
           <strong>{senderName}</strong>
-          <div className="message-content">{msg.content}</div>
+          <div className="message-content">
+            {renderContentWithMentions(msg.content)}
+          </div>
         </div>
       </div>
-
-      {(user && (user.id === msg.sender_username || user.username === msg.sender_username || user.id === msg.sender_id)) && (
-        <div className="message-controls">
-          <button onClick={async () => {
-            if (!confirm('Удалить сообщение? Это действие нельзя отменить.')) return;
-            try {
-              const resp = await fetch(`/api/messenger/delete-message/${msg.id}`, { method: 'DELETE', headers: { 'x-user-id': user.id } });
-              const j = await resp.json();
-              if (resp.ok && j.success) {
-                if (typeof onDelete === 'function') onDelete(msg.id, j.storageInfo);
-              } else {
-                alert(j.message || 'Не удалось удалить сообщение');
-              }
-            } catch (e) {
-              console.error('delete message error', e);
-              alert('Ошибка удаления сообщения');
-            }
-          }}>Удалить</button>
-        </div>
-      )}
 
       {files.length > 0 && (
         <div className="message-files">
           {files.map(fileId => (
-            <FileItem key={fileId} fileId={fileId} fileMeta={fileMeta.get(fileId) || {}} />
+            <FileItem 
+              key={fileId} 
+              fileId={fileId} 
+              fileMeta={fileMeta.get(fileId) || {}} 
+            />
           ))}
         </div>
       )}
+
+      <div className="message-controls">
+        {isCurrentUser && (
+          <button 
+            onClick={async () => {
+              if (!confirm('Удалить сообщение? Это действие нельзя отменить.')) 
+                return;
+              try {
+                const resp = await fetch(
+                  `/api/messenger/delete-message/${msg.id}`, 
+                  { 
+                    method: 'DELETE', 
+                    headers: { 'x-user-id': user.id } 
+                  }
+                );
+                const j = await resp.json();
+                if (resp.ok && j.success) {
+                  if (typeof onDelete === 'function') 
+                    onDelete(msg.id, j.storageInfo);
+                } else {
+                  alert(j.message || 'Не удалось удалить сообщение');
+                }
+              } catch (e) {
+                console.error('delete message error', e);
+                alert('Ошибка удаления сообщения');
+              }
+            }}
+          >
+            Удалить
+          </button>
+        )}
+        <ForwardButton msg={msg} wsRef={wsRef}/>
+      </div>
 
       <small>{formatTime(msg.created_at)}</small>
     </div>

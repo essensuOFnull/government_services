@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './Messenger.css';
+
 import Message from './Message';
 import Avatar from './Avatar';
+import UserSearch from './UserSearch';
 
 export function Messenger({ userId }) {
   const [conversations, setConversations] = useState([]);
@@ -20,6 +22,28 @@ export function Messenger({ userId }) {
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [fileMeta, setFileMeta] = useState(new Map());
+  const [showUserSearch, setShowUserSearch] = useState(false);
+    // Создать чат с найденным пользователем
+    const handleUserSelected = async (user) => {
+      setShowUserSearch(false);
+      if (!user || !user.id) return;
+      try {
+        const res = await fetch('/api/messenger/conversation/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+          body: JSON.stringify({ participantIds: [user.id] })
+        });
+        const j = await res.json();
+        if (j.success && j.conversation) {
+          const exists = conversations.some(c => c.id === j.conversation.id);
+          if (!exists) setConversations([...conversations, j.conversation]);
+          setCurrentConversation(j.conversation);
+          setOffset(0);
+          setHasMore(true);
+          setMessages([]);
+        }
+      } catch (e) { console.error(e); }
+    };
   const typingTimeoutRef = useRef(null);
 
   // Инициализация WebSocket
@@ -61,6 +85,38 @@ export function Messenger({ userId }) {
     const { type, ...data } = message;
 
     switch (type) {
+      case 'forward_message':
+        if (currentConversation && currentConversation.id === data.conversationId) {
+          // Добавляем пересланное сообщение в текущий чат
+          setMessages(prev => [...prev, data.newMessage]);
+          
+          // Обновляем метаданные файлов, если есть
+          if (data.newMessage.file_ids && data.newMessage.file_ids.length > 0) {
+            const fileIdsToFetch = new Set();
+            data.newMessage.file_ids.forEach(fid => { 
+              if (!fileMeta.has(fid)) fileIdsToFetch.add(fid); 
+            });
+            
+            if (fileIdsToFetch.size > 0) {
+              // Загружаем метаданные файлов
+              (async () => {
+                const newMap = new Map(fileMeta);
+                for (const fid of fileIdsToFetch) {
+                  try {
+                    const resp = await fetch(`/api/messenger/file/${fid}`, { headers: { 'x-user-id': userId } });
+                    const j = await resp.json();
+                    if (j.success && j.file) {
+                      newMap.set(fid, j.file);
+                    }
+                  } catch (e) { console.error('file meta fetch', e); }
+                }
+                setFileMeta(newMap);
+              })();
+            }
+          }
+        }
+        break;
+
       case 'new_message':
         setMessages(prev => [...prev, data.message]);
         break;
@@ -440,9 +496,15 @@ export function Messenger({ userId }) {
     <div className="messenger-container">
       <div className="window messenger-sidebar">
         <p><strong>Разговоры</strong></p>
-        <div>
+        <div style={{ display: 'flex', gap: 8 ,flexDirection:'column'}}>
           <button onClick={openFavorites}>Избранное</button>
+          <button onClick={() => setShowUserSearch(s => !s)}>
+            Найти пользователя
+          </button>
         </div>
+        {showUserSearch && (
+          <UserSearch onUserSelected={handleUserSelected} />
+        )}
         <div className="conversations-list">
           {conversations.map(conv => {
             // Получаем ID других участников (исключая текущего пользователя)
@@ -486,7 +548,13 @@ export function Messenger({ userId }) {
 
             <div className="messages-list" ref={messageListRef}>
               {messages.map(msg => (
-                <Message key={msg.id} msg={msg} fileMeta={fileMeta} users={users} onDelete={removeMessageFromList} />
+                <Message key={msg.id} 
+                  msg={msg} 
+                  fileMeta={fileMeta} 
+                  users={users} 
+                  onDelete={removeMessageFromList}
+                  wsRef={wsRef}
+                />
               ))}
               {typingUsers.size > 0 && (
                 <div className="typing-indicator">

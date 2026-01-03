@@ -3,7 +3,7 @@ const API_BASE_URL = (import.meta.env.MODE === 'development')
   ? '/api'
   : (import.meta.env.VITE_API_URL || '/api');
 
-export const api = {
+const api = {
   async request(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
     console.log(`API request -> ${options.method || 'GET'} ${url}`);
@@ -76,5 +76,10 @@ export const api = {
 
   async getUser(id) {
     return this.request(`/user/${id}`);
+  },
+  // Поиск пользователя по username
+  async findUserByUsername(username) {
+    return this.request(`/messenger/find-user?username=${encodeURIComponent(username)}`);
   }
 };
+export default api;

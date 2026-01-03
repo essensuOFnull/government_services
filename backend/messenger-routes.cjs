@@ -1,7 +1,10 @@
+
 const express = require('express');
 const { v4: uuid } = require('uuid');
 const fs = require('fs');
 const path = require('path');
+
+const router = express.Router();
 
 const {
   Users,
@@ -23,8 +26,6 @@ const {
 } = require('./messenger-upload.cjs');
 
 const uploadsDir = process.env.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
-
-const router = express.Router();
 
 // Простые одноразовые/временные токены предпросмотра (in-memory)
 const previewTokens = new Map(); // token -> { fileId, userId, expiresAt }
@@ -72,6 +73,24 @@ const authenticateUser = (req, res, next) => {
   req.user = user;
   next();
 };
+
+// Поиск пользователя по username
+router.get('/find-user', authenticateUser, (req, res) => {
+  try {
+    const { username } = req.query;
+    if (!username || typeof username !== 'string' || !username.trim()) {
+      return res.status(400).json({ success: false, message: 'Не указан username' });
+    }
+    // Поиск без учета регистра
+    const user = Users.getByUsername(username.trim());
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Пользователь не найден' });
+    }
+    res.json({ success: true, ...user });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 // Инициализация БД
 router.get('/init-db', (req, res) => {
@@ -717,6 +736,24 @@ router.post('/forward-message', authenticateUser, async (req, res) => {
 
     Conversations.updateLastMessage(targetConversationId);
 
+    // Получаем WebSocket сервер
+    const wsServer = req.app.get('wsServer');
+    if (wsServer && typeof wsServer.broadcastToConversation === 'function') {
+      // Получим username отправителя
+      let senderUsername = req.user.username || req.user.id;
+      wsServer.broadcastToConversation(targetConversationId, {
+        type: 'new_message',
+        message: {
+          id: newMessage.id,
+          conversation_id: newMessage.conversation_id,
+          sender_id: newMessage.sender_id,
+          sender_username: senderUsername,
+          content: newMessage.content,
+          file_ids: newMessage.file_ids,
+          created_at: Date.now()
+        }
+      });
+    }
     res.json({
       success: true,
       message: newMessage
