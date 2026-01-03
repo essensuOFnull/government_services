@@ -26,6 +26,20 @@ const uploadsDir = process.env.UPLOAD_DIR || path.join(__dirname, '../data/uploa
 
 const router = express.Router();
 
+// Простые одноразовые/временные токены предпросмотра (in-memory)
+const previewTokens = new Map(); // token -> { fileId, userId, expiresAt }
+function generateToken() {
+  return require('crypto').randomBytes(18).toString('base64url');
+}
+
+// Очистка просроченных токенов периодически
+setInterval(() => {
+  const now = Date.now();
+  for (const [t, v] of previewTokens.entries()) {
+    if (v.expiresAt <= now) previewTokens.delete(t);
+  }
+}, 60 * 1000);
+
 // Middleware для проверки аутентификации
 const authenticateUser = (req, res, next) => {
   const userId = req.headers['x-user-id'] || req.body?.userId;
@@ -306,6 +320,90 @@ router.get('/file/:fileId', authenticateUser, (req, res) => {
 
     res.json({ success: true, file: Object.assign({}, file, { s3Url }) });
   } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Создать короткоживущий токен предпросмотра для использования в <img>/<video>/<audio>
+router.post('/preview-token/:fileId', authenticateUser, (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const file = FilesDB.getById(fileId);
+    if (!file) return res.status(404).json({ success: false, message: 'Файл не найден' });
+
+    // Проверяем, есть ли доступ к файлу (используем ту же логику, что и в /file/:fileId)
+    let hasAccess = false;
+    if (file.uploader_id === req.user.id) {
+      hasAccess = true;
+    } else {
+      const messagesWithFile = db.prepare(
+        `SELECT DISTINCT m.conversation_id 
+         FROM messages m 
+         JOIN file_references fr ON m.id = fr.message_id 
+         WHERE fr.file_id = ?`
+      ).all(fileId);
+      if (messagesWithFile.length > 0) {
+        for (const msg of messagesWithFile) {
+          const convData = db.prepare('SELECT participant_ids FROM conversations WHERE id = ?').get(msg.conversation_id);
+          if (convData) {
+            const participants = JSON.parse(convData.participant_ids);
+            if (participants.includes(req.user.userId)) { hasAccess = true; break; }
+          }
+        }
+      }
+    }
+
+    if (!hasAccess) return res.status(403).json({ success: false, message: 'У вас нет доступа к этому файлу' });
+
+    const token = generateToken();
+    const ttl = 2 * 60 * 1000; // 2 минуты
+    previewTokens.set(token, { fileId, userId: req.user.userId, expiresAt: Date.now() + ttl });
+
+    res.json({ success: true, token, expiresInMs: ttl });
+  } catch (err) {
+    console.error('preview-token error', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Endpoint для предпросмотра: проверяет токен и стримит файл (без авторизации по заголовку)
+router.get('/preview/:fileId', async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const token = req.query.token;
+    if (!token) return res.status(400).json({ success: false, message: 'Token required' });
+    const record = previewTokens.get(token);
+    if (!record || record.fileId !== fileId || record.expiresAt <= Date.now()) {
+      return res.status(403).json({ success: false, message: 'Invalid or expired token' });
+    }
+
+    // Optionally delete token to make one-time
+    previewTokens.delete(token);
+
+    const file = FilesDB.getById(fileId);
+    if (!file) return res.status(404).json({ success: false, message: 'File not found' });
+
+    const s3Url = s3Service.getS3Url(file.s3_key);
+    res.set('Content-Type', file.mime_type || 'application/octet-stream');
+
+    try {
+      const response = await fetch(s3Url);
+      if (!response.ok) throw new Error(`S3 returned ${response.status}`);
+      response.body.pipe(res);
+    } catch (fetchErr) {
+      console.error('Preview fetch error:', fetchErr);
+      // Fallback: use s3Service.downloadFile into temp file then send
+      const tempPath = path.join(uploadsDir, `temp-preview-${fileId}`);
+      try {
+        await s3Service.downloadFile(file.s3_key, tempPath);
+        res.sendFile(tempPath, () => { fs.unlink(tempPath, () => {}); });
+      } catch (dlErr) {
+        console.error('Preview fallback error:', dlErr);
+        res.status(500).json({ success: false, message: 'Не удалось получить предпросмотр' });
+      }
+    }
+  } catch (err) {
+    console.error('preview error', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useWindowsManager } from '../hooks/useWindowsManager';
 import { useAuthContext } from './auth/AuthContext';
+import FileViewer from './FileViewer';
 export default function FileItem({ fileId, fileMeta = {} }) {
   const { openWindow, closeWindow } = useWindowsManager();
   const { user } = useAuthContext();
@@ -39,38 +40,38 @@ export default function FileItem({ fileId, fileMeta = {} }) {
   };
 
   const handleOpen = () => {
-    // Open file in new window
+    // Open file in custom inner window using FileViewer (no extra buttons)
     openWindow({
-        title: fileMeta.original_filename,
-        children: <FileItem fileId={fileId} fileMeta={fileMeta}/>,
-    })
+      title: fileMeta.original_filename || filename,
+      children: <FileViewer fileId={fileId} fileMeta={fileMeta} />,
+    });
   };
 
   useEffect(() => {
-    // For media previews, fetch via authenticated request and create object URL
+    // For media previews, request short-lived preview token and use same-origin preview URL
     let active = true;
-    let objUrl = null;
-
-    const shouldFetch = (isImage || isVideo || isAudio) && userId;
-    if (!shouldFetch) return undefined;
+    if (!(isImage || isVideo || isAudio) || !userId) return undefined;
 
     (async () => {
       try {
-        const resp = await fetch(s3url, { headers: { 'x-user-id': userId } });
-        if (!resp.ok) throw new Error('Preview fetch failed');
-        const blob = await resp.blob();
-        objUrl = URL.createObjectURL(blob);
-        if (active) setPreviewUrl(objUrl);
+        const tokenResp = await fetch(`/api/messenger/preview-token/${fileId}`, {
+          method: 'POST',
+          headers: { 'x-user-id': userId }
+        });
+        const j = await tokenResp.json();
+        if (!tokenResp.ok || !j.success || !j.token) {
+          console.error('Failed to get preview token', j);
+          return;
+        }
+        const token = j.token;
+        const url = `/api/messenger/preview/${fileId}?token=${encodeURIComponent(token)}`;
+        if (active) setPreviewUrl(url);
       } catch (err) {
-        console.error('Preview load error', err);
+        console.error('Preview token error', err);
       }
     })();
 
-    return () => {
-      active = false;
-      if (objUrl) URL.revokeObjectURL(objUrl);
-      setPreviewUrl(null);
-    };
+    return () => { active = false; setPreviewUrl(null); };
   }, [s3url, userId, isImage, isVideo, isAudio]);
 
   return (
