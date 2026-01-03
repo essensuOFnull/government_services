@@ -186,7 +186,7 @@ export function Messenger({ userId }) {
         }
         
         // откроем разговор и сбросим пагинацию
-        setCurrentConversation(j.conversation.id);
+        setCurrentConversation(j.conversation);
         setOffset(0);
         setHasMore(true);
         setMessages([]);
@@ -202,7 +202,7 @@ export function Messenger({ userId }) {
     const fetchMessages = async (lim = pageSize, off = 0, prepend = false) => {
       try {
         const response = await fetch(
-          `/api/messenger/conversation/${currentConversation}/messages?limit=${lim}&offset=${off}`,
+          `/api/messenger/conversation/${currentConversation.id}/messages?limit=${lim}&offset=${off}`,
           { headers: { 'x-user-id': userId } }
         );
         const data = await response.json();
@@ -239,12 +239,12 @@ export function Messenger({ userId }) {
     if (!el) return;
 
     const handler = async () => {
-      if (el.scrollTop === 0 && hasMore && currentConversation) {
+      if (el.scrollTop === 0 && hasMore && currentConversation.id) {
         // загружаем следующую страницу старых сообщений
         try {
           const lim = pageSize;
           const off = offset;
-          const resp = await fetch(`/api/messenger/conversation/${currentConversation}/messages?limit=${lim}&offset=${off}`, { headers: { 'x-user-id': userId } });
+          const resp = await fetch(`/api/messenger/conversation/${currentConversation.id}/messages?limit=${lim}&offset=${off}`, { headers: { 'x-user-id': userId } });
           const json = await resp.json();
           const msgs = json.messages || [];
           if (msgs.length > 0) {
@@ -290,7 +290,7 @@ export function Messenger({ userId }) {
 
   const handleSendMessage = async () => {
     if (!messageInput.trim() && attachments.length === 0) return;
-    if (!currentConversation) return;
+    if (!currentConversation.id) return;
 
     const content = messageInput;
     setMessageInput('');
@@ -301,7 +301,7 @@ export function Messenger({ userId }) {
       try {
         const formData = new FormData();
         attachments.forEach(f => formData.append('files', f));
-        formData.append('conversationId', currentConversation);
+        formData.append('conversationId', currentConversation.id);
 
         const resp = await fetch('/api/messenger/upload-files', {
           method: 'POST',
@@ -324,7 +324,7 @@ export function Messenger({ userId }) {
     wsRef.current?.send(JSON.stringify({
       type: 'send_message',
       data: {
-        conversationId: currentConversation,
+        conversationId: currentConversation.id,
         content,
         fileIds: uploadedFileIds
       }
@@ -335,11 +335,11 @@ export function Messenger({ userId }) {
   };
 
   const handleTyping = () => {
-    if (!currentConversation) return;
+    if (!currentConversation.id) return;
 
     wsRef.current?.send(JSON.stringify({
       type: 'typing_start',
-      data: { conversationId: currentConversation }
+      data: { conversationId: currentConversation.id }
     }));
 
     // Очищаем предыдущий таймер
@@ -351,14 +351,14 @@ export function Messenger({ userId }) {
     typingTimeoutRef.current = setTimeout(() => {
       wsRef.current?.send(JSON.stringify({
         type: 'typing_stop',
-        data: { conversationId: currentConversation }
+        data: { conversationId: currentConversation.id }
       }));
     }, 3000);
   };
 
   const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files || []);
-    if (!files.length || !currentConversation) return;
+    if (!files.length || !currentConversation.id) return;
 
     // Добавляем выбранные файлы в список вложений (не отправляем сразу)
     setAttachments(prev => [...prev, ...files]);
@@ -368,7 +368,7 @@ export function Messenger({ userId }) {
   const handleDrop = (e) => {
     e.preventDefault();
     const files = Array.from(e.dataTransfer?.files || []);
-    if (files.length && currentConversation) {
+    if (files.length && currentConversation.id) {
       setAttachments(prev => [...prev, ...files]);
     }
   };
@@ -382,35 +382,6 @@ export function Messenger({ userId }) {
     if (storageInfoUpdate) setStorageInfo(storageInfoUpdate);
   };
 
-  const getStorageDisplay = () => {
-    if (!storageInfo) return null;
-
-    const { quota, serverStatus } = storageInfo;
-
-    if (serverStatus?.isLowSpace) {
-      return (
-        <div className="storage-warning">
-          <p>⚠️ {storageInfo.message}</p>
-        </div>
-      );
-    }
-
-    const percentage = quota.percentageUsed || 0;
-
-    return (
-      <div className="storage-info">
-        <p>{storageInfo.message}</p>
-        <div className="storage-bar">
-          <div 
-            className="storage-used"
-            style={{ width: `${Math.min(percentage, 100)}%` }}
-          />
-        </div>
-        <span className="storage-percentage">{percentage}%</span>
-      </div>
-    );
-  };
-
   const getStatusText = (userId) => {
     if (onlineUsers.has(userId)) {
       return 'онлайн';
@@ -422,22 +393,36 @@ export function Messenger({ userId }) {
     return 'офлайн';
   };
 
+  if (!storageInfo) return null;
+
+  const { quota, serverStatus } = storageInfo;
+
+  if (serverStatus?.isLowSpace) {
+    return (
+      <div className="storage-warning">
+        <p>⚠️ {storageInfo.message}</p>
+      </div>
+    );
+  }
+
+  const percentage = quota.percentageUsed || 0;
+  
   return (
     <div className="messenger-container">
-      <div className="messenger-sidebar">
-        <h2>Разговоры</h2>
-        <div style={{ marginBottom: 8 }}>
+      <div className="window messenger-sidebar">
+        <p><strong>Разговоры</strong></p>
+        <div>
           <button onClick={openFavorites}>Избранное</button>
         </div>
         <div className="conversations-list">
           {conversations.map(conv => (
-            <div
+            <button
               key={conv.id}
-              className={`conversation-item ${currentConversation === conv.id ? 'active' : ''}`}
-              onClick={() => setCurrentConversation(conv.id)}
+              className={`conversation-item ${currentConversation&&currentConversation.id === conv.id ? 'active' : ''}`}
+              onClick={() => setCurrentConversation(conv)}
             >
               <span>{conv.title || conv.id}</span>
-            </div>
+            </button>
           ))}
         </div>
       </div>
@@ -445,9 +430,13 @@ export function Messenger({ userId }) {
       <div className="messenger-main">
         {currentConversation ? (
           <>
-            <div className="messenger-header">
-              <h3>Разговор</h3>
-              {getStorageDisplay()}
+            <div className="window messenger-header">
+              <p><strong>{currentConversation.title}</strong></p>
+              <p>{storageInfo.message}</p>
+              <div className="progress-indicator segmented">
+                <span className="progress-indicator-bar" style={{width: `${Math.min(percentage, 100)}%`}}/>
+              </div>
+              <p className="storage-percentage">Занято {percentage}%</p>
             </div>
 
             <div className="messages-list" ref={messageListRef}>
@@ -469,7 +458,7 @@ export function Messenger({ userId }) {
               )}
             </div>
 
-            <div className="message-input-area" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
+            <div className="window message-input-area field-row-stacked" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
               {attachments.length > 0 && (
                 <div className="attachments-list">
                   {attachments.map((f, idx) => (
@@ -495,15 +484,17 @@ export function Messenger({ userId }) {
                 placeholder="Введите сообщение..."
               />
               <div className="message-actions">
-                <label className="file-upload-label">
-                  📎 Файл
-                  <input
-                    type="file"
-                    multiple
-                    onChange={handleFileUpload}
-                    hidden
-                  />
-                </label>
+                <button>
+                  <label>
+                    📎 Файл
+                    <input
+                      type="file"
+                      multiple
+                      onChange={handleFileUpload}
+                      hidden
+                    />
+                  </label>
+                </button>
                 <button onClick={handleSendMessage}>Отправить</button>
               </div>
             </div>
