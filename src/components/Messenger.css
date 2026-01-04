@@ -51,10 +51,17 @@
 
 .message {
   border-radius: 16px;
-  border-left: 3px solid #007bff;
   word-break: break-word;
   max-width: 70%;
+  width: 70%;
   background:#0000000F;
+}
+.message:not(.self){
+  border-left: 3px solid #007bff;
+}
+.message.self{
+  border-right: 3px solid #007bff;
+  margin-left:auto;
 }
 
 .file-link {

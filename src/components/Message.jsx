@@ -64,7 +64,7 @@ export default function Message({ msg, fileMeta = new Map(), users = new Map(), 
                         user.username === msg.sender_username);
 
   return (
-    <div className="message">
+    <div className={`message${isCurrentUser?' self':''}`}>
       <div style={{ display: 'flex', gap: '12px', marginBottom: '8px' }}>
         <Avatar 
           userId={senderId}
