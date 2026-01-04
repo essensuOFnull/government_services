@@ -1,9 +1,3 @@
-@font-face {
-  font-family: "CODERROR16x16GNUUnifont";
-  src: url("../fonts/CODERROR16x16GNUUnifont.ttf") format("truetype");
-  font-weight: normal;
-  font-style: normal;
-}
 *{
 	--spacing-base: 4px;
 	--spacing-1: calc(var(--spacing-base) * .5);
@@ -56,8 +50,8 @@
 	--shadow-icon-button-disabled: var(--shadow-outer-4);
 	--shadow-input: var(--shadow-inner-4);
 
-	font-family:"CODERROR16x16GNUUnifont";
-	font-size:16px
+	font-family:"Consolas";
+	font-size:14px
 }
 body{
 	background:#008080;
