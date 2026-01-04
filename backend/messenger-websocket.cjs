@@ -154,9 +154,9 @@ class MessengerWebSocketServer {
       const user = Users.getById(userId);
       const senderUsername = user?.username || userId;
       
-      // Рассылаем новое сообщение всем участникам целевого чата
+      // Рассылаем новое сообщение всем участникам целевого чата как forward_message
       this.broadcastToConversation(conversationId, {
-        type: 'new_message',
+        type: 'forward_message',
         message: {
           id: forwardedMessage.id,
           conversation_id: forwardedMessage.conversation_id,

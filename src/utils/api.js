@@ -7,9 +7,17 @@ const api = {
   async request(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
     console.log(`API request -> ${options.method || 'GET'} ${url}`);
+    // Получаем userId из storage, если есть
+    let userId = null;
+    try {
+      const storageModule = await import('./storage');
+      const authData = storageModule.storage.getAuthData();
+      userId = authData?.id || null;
+    } catch (e) { userId = null; }
     const defaultOptions = {
       headers: {
         'Content-Type': 'application/json',
+        ...(userId ? { 'x-user-id': userId } : {})
       },
       credentials: 'include'
     };

@@ -86,19 +86,16 @@ export function Messenger({ userId }) {
 
     switch (type) {
       case 'forward_message':
-        if (currentConversation && currentConversation.id === data.conversationId) {
-          // Добавляем пересланное сообщение в текущий чат
-          setMessages(prev => [...prev, data.newMessage]);
-          
+        // Исправлено: forward_message теперь содержит message, а не newMessage
+        if (currentConversation && currentConversation.id === data.message?.conversation_id) {
+          setMessages(prev => [...prev, data.message]);
           // Обновляем метаданные файлов, если есть
-          if (data.newMessage.file_ids && data.newMessage.file_ids.length > 0) {
+          if (data.message.file_ids && data.message.file_ids.length > 0) {
             const fileIdsToFetch = new Set();
-            data.newMessage.file_ids.forEach(fid => { 
+            data.message.file_ids.forEach(fid => { 
               if (!fileMeta.has(fid)) fileIdsToFetch.add(fid); 
             });
-            
             if (fileIdsToFetch.size > 0) {
-              // Загружаем метаданные файлов
               (async () => {
                 const newMap = new Map(fileMeta);
                 for (const fid of fileIdsToFetch) {
