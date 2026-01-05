@@ -1,9 +1,17 @@
+require('dotenv').config();
+
 const multer = require('multer');
 const mime = require('mime-types');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuid } = require('uuid');
-const { Storage, Files, Users } = require('./database.cjs');
+
+// Импорт Sequelize моделей
+const {
+  User,
+  File,
+  UserStorageQuota
+} = require('./database.cjs');
 
 const uploadsDir = process.env.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
 
@@ -54,14 +62,13 @@ const storage = multer.diskStorage({
   }
 });
 
-// Фильтр: принимаем любые типы файлов — валидация MIME пусть будет логической (UI/preview),
-// но мы не отклоняем загрузку на этапе multipart, чтобы сохранять любые файлы.
+// Фильтр
 const fileFilter = (req, file, cb) => {
   cb(null, true);
 };
 
 // Функция проверки квоты хранилища
-const checkStorageQuota = (req, res, next) => {
+const checkStorageQuota = async (req, res, next) => {
   const userId = req.user?.id;
 
   if (!userId) {
@@ -71,42 +78,70 @@ const checkStorageQuota = (req, res, next) => {
     });
   }
 
-  const user = Users.getById(userId);
-  if (!user) {
-    return res.status(404).json({
+  try {
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Пользователь не найден'
+      });
+    }
+
+    // Получаем или создаем квоту
+    let quota = await UserStorageQuota.findOne({ where: { user_id: userId } });
+    if (!quota) {
+      let storage_limit_bytes = null;
+      if (user.role === 'guest') {
+        storage_limit_bytes = 10 * 1024 * 1024 * 1024;
+      }
+      quota = await UserStorageQuota.create({
+        user_id: userId,
+        storage_limit_bytes,
+        storage_used_bytes: 0
+      });
+    }
+
+    // Получаем файлы пользователя
+    const userFiles = await File.findAll({
+      where: { 
+        owner_id: userId,
+        deleted_at: null 
+      }
+    });
+    
+    const usedStorage = userFiles.reduce((sum, file) => sum + (file.size || 0), 0);
+
+    // Получаем свободное место на сервере
+    const serverFreeSpace = getServerFreeSpace();
+
+    // Минимум 10GB должно быть на сервере
+    if (serverFreeSpace < 10 * 1024 * 1024 * 1024) {
+      return res.status(507).json({
+        success: false,
+        message: 'На сервере осталось меньше места, чем вам положено',
+        serverFreeSpace,
+        userLimit: quota.storage_limit_bytes,
+        userUsed: usedStorage
+      });
+    }
+
+    req.storageInfo = {
+      quota: quota.toJSON(),
+      usedStorage,
+      serverFreeSpace
+    };
+
+    next();
+  } catch (error) {
+    console.error('Error in checkStorageQuota:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Пользователь не найден'
+      message: 'Ошибка проверки квоты хранилища'
     });
   }
-
-  const quota = Storage.getQuota(userId);
-  const userFiles = Files.getUserFiles(userId);
-  const usedStorage = userFiles.reduce((sum, file) => sum + file.size, 0);
-
-  // Получаем свободное место на сервере (упрощенная версия)
-  const serverFreeSpace = getServerFreeSpace();
-
-  // Минимум 10GB должно быть на сервере
-  if (serverFreeSpace < 10 * 1024 * 1024 * 1024) {
-    return res.status(507).json({
-      success: false,
-      message: 'На сервере осталось меньше места, чем вам положено',
-      serverFreeSpace,
-      userLimit: quota?.storage_limit_bytes,
-      userUsed: usedStorage
-    });
-  }
-
-  req.storageInfo = {
-    quota,
-    usedStorage,
-    serverFreeSpace
-  };
-
-  next();
 };
 
-// Функция получения свободного места на диске (для Windows)
+// Функция получения свободного места на диске
 const getServerFreeSpace = () => {
   try {
     const execSync = require('child_process').execSync;
@@ -122,41 +157,33 @@ const getServerFreeSpace = () => {
     return parseInt(result) || 0;
   } catch (error) {
     console.error('Ошибка получения свободного места:', error);
+    
+    // Fallback для Windows
+    try {
+      if (process.platform === 'win32') {
+        const execSync = require('child_process').execSync;
+        const result = execSync(
+          'wmic logicaldisk where "DeviceID=\'C:\'" get FreeSpace',
+          { encoding: 'utf-8' }
+        ).trim();
+        const lines = result.split('\n');
+        if (lines.length > 1) {
+          return parseInt(lines[1].trim()) || 0;
+        }
+      }
+    } catch (e) {}
+    
     return 0;
   }
 };
 
-// Функция для вычисления лимита на размер файла
-const getFileSizeLimit = (userId) => {
-  try {
-    // Get user quota info
-    const userQuota = require('./database.cjs').Storage.getQuota(userId);
-    const userLimit = userQuota?.storage_limit_bytes ?? (10 * 1024 * 1024 * 1024); // Default 10GB
-    const userUsed = userQuota?.storage_used_bytes ?? 0;
-    const userAvailable = userLimit - userUsed;
-
-    // Get server free space
-    const serverFree = getServerFreeSpace();
-
-    // Use the minimum of what's available
-    const maxAllowed = Math.min(userAvailable, serverFree);
-    
-    // Ensure a reasonable minimum (1MB minimum)
-    return Math.max(maxAllowed, 1024 * 1024);
-  } catch (e) {
-    console.warn('Error calculating file size limit:', e);
-    // Default to 10GB if there's an error
-    return 10 * 1024 * 1024 * 1024;
-  }
-};
-
-// Multer middleware с динамическим лимитом размера
+// Multer middleware
 const createUploadMiddleware = () => {
   return multer({
     storage,
     fileFilter,
     limits: {
-      fileSize: 10 * 1024 * 1024 * 1024, // 10GB upper limit per file (actual limit checked in route)
+      fileSize: 10 * 1024 * 1024 * 1024, // 10GB upper limit per file
       fieldSize: 10 * 1024 * 1024 * 1024 // 10GB limit per field
     }
   });
@@ -185,7 +212,7 @@ const handleMulterError = (err, req, res, next) => {
   next(err);
 };
 
-// Валидация MIME-типа (не блокирует загрузку): помечаем в запросе, пригодно для логики предпросмотра
+// Валидация MIME-типа
 const validateMimeType = (req, res, next) => {
   if (!req.file) return next();
   try {
@@ -203,6 +230,5 @@ module.exports = {
   validateMimeType,
   handleMulterError,
   getServerFreeSpace,
-  getFileSizeLimit,
   ALLOWED_MIME_TYPES
 };

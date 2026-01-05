@@ -1,1 +1,0 @@
-UPDATE messages SET deleted_at = ? WHERE id = ?;

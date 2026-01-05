@@ -1,1 +1,0 @@
-UPDATE user_storage_quota SET storage_limit_bytes = ? WHERE user_id = ?;

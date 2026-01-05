@@ -1,1 +1,0 @@
-INSERT INTO users (id, username, password, role, status, last_seen, storage_used, storage_quota, total_storage_used, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);

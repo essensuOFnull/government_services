@@ -1,3 +1,4 @@
+require('dotenv').config();
 
 const express = require('express');
 const { v4: uuid } = require('uuid');
@@ -6,13 +7,20 @@ const path = require('path');
 
 const router = express.Router();
 
+// Импорт Sequelize моделей
 const {
-  Users,
-  Messages,
-  Files: FilesDB,
-  Conversations,
+  User,
+  Message,
+  File,
+  Conversation,
+  ConversationParticipant,
+  UserStorageQuota,
+  FileReference,
   initializeDatabase,
-  db
+  sequelize,
+  Op,
+  compressContent,
+  decompressContent
 } = require('./database.cjs');
 
 const s3Service = require('./messenger-s3.cjs');
@@ -42,7 +50,7 @@ setInterval(() => {
 }, 60 * 1000);
 
 // Middleware для проверки аутентификации
-const authenticateUser = (req, res, next) => {
+const authenticateUser = async (req, res, next) => {
   const userId = req.headers['x-user-id'] || req.body?.userId;
 
   if (!userId) {
@@ -52,50 +60,62 @@ const authenticateUser = (req, res, next) => {
     });
   }
 
-  // Ищем пользователя по id
-  let user = Users.getById(userId);
+  try {
+    // Ищем пользователя по id
+    let user = await User.findByPk(userId);
 
-  // Если пользователя нет — создадим запись для совместимости
-  if (!user) {
-    try {
-      Users.create(userId, userId);
-      user = Users.getById(userId);
-      console.log(`Created messenger user for id=${userId}`);
-    } catch (err) {
-      user = Users.getById(userId);
-      if (!user) {
+    // Если пользователя нет — создадим запись для совместимости
+    if (!user) {
+      try {
+        user = await User.create({
+          id: userId,
+          username: userId,
+          role: 'guest',
+          status: 'offline',
+          created_at: Date.now(),
+          updated_at: Date.now()
+        });
+        console.log(`Created messenger user for id=${userId}`);
+      } catch (err) {
         console.error('Failed to create or find messenger user:', err);
         return res.status(500).json({ success: false, message: 'Ошибка создания пользователя' });
       }
     }
-  }
 
-  req.user = user;
-  next();
+    req.user = user.toJSON();
+    next();
+  } catch (error) {
+    console.error('Error in authenticateUser:', error);
+    return res.status(500).json({ success: false, message: 'Ошибка аутентификации' });
+  }
 };
 
 // Поиск пользователя по username
-router.get('/find-user', authenticateUser, (req, res) => {
+router.get('/find-user', authenticateUser, async (req, res) => {
   try {
     const { username } = req.query;
     if (!username || typeof username !== 'string' || !username.trim()) {
       return res.status(400).json({ success: false, message: 'Не указан username' });
     }
-    // Поиск без учета регистра
-    const user = Users.getByUsername(username.trim());
+    
+    const user = await User.findOne({
+      where: { username: username.trim() }
+    });
+    
     if (!user) {
       return res.status(404).json({ success: false, message: 'Пользователь не найден' });
     }
-    res.json({ success: true, ...user });
+    
+    res.json({ success: true, ...user.toJSON() });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
 // Инициализация БД
-router.get('/init-db', (req, res) => {
+router.get('/init-db', async (req, res) => {
   try {
-    initializeDatabase();
+    await initializeDatabase();
     res.json({
       success: true,
       message: 'База данных инициализирована'
@@ -109,9 +129,9 @@ router.get('/init-db', (req, res) => {
 });
 
 // Получение информации о хранилище
-router.get('/storage-info', authenticateUser, (req, res) => {
+router.get('/storage-info', authenticateUser, async (req, res) => {
   try {
-    const storageInfo = storageManager.getStorageInfo(req.user.id);
+    const storageInfo = await storageManager.getStorageInfo(req.user.id);
     res.json(storageInfo);
   } catch (error) {
     console.error('Error in /storage-info:', error);
@@ -140,7 +160,7 @@ router.post('/upload-file',
       const { conversationId } = req.body;
 
       // Проверяем квоту
-      const canAdd = storageManager.canAddFile(req.user.id, req.file.size);
+      const canAdd = await storageManager.canAddFile(req.user.id, req.file.size);
       if (!canAdd.allowed) {
         fs.unlinkSync(req.file.path);
         return res.status(507).json({
@@ -150,7 +170,6 @@ router.post('/upload-file',
       }
 
       // Загружаем в S3
-      // Normalize original filename: multer/busboy may decode using latin1, convert to UTF-8
       const originalName = (() => {
         try {
           return Buffer.from(req.file.originalname, 'latin1').toString('utf8');
@@ -165,26 +184,29 @@ router.post('/upload-file',
         originalName
       );
 
-      // Сохраняем в БД (используем нормализованное имя)
-      const fileRecord = FilesDB.create(
-        fileId,
-        originalName,
-        req.file.mimetype,
-        req.file.size,
-        s3Key,
-        req.user.id
-      );
+      // Сохраняем в БД
+      const fileRecord = await File.create({
+        id: fileId,
+        original_filename: originalName,
+        mime_type: req.file.mimetype,
+        size: req.file.size,
+        s3_key: s3Key,
+        uploader_id: req.user.id,
+        owner_id: req.user.id,
+        created_at: Date.now(),
+        reference_count: 1
+      });
 
       // Обновляем квоту
-      storageManager.addFileToQuota(req.user.id, req.file.size);
+      await storageManager.addFileToQuota(req.user.id, req.file.size);
 
       // Удаляем локальный файл
       fs.unlinkSync(req.file.path);
 
       res.json({
         success: true,
-        file: fileRecord,
-        storageInfo: storageManager.getStorageInfo(req.user.id)
+        file: fileRecord.toJSON(),
+        storageInfo: await storageManager.getStorageInfo(req.user.id)
       });
     } catch (error) {
       console.error('Ошибка загрузки файла:', error);
@@ -215,37 +237,42 @@ router.post('/upload-files',
 
       for (const f of req.files) {
         // Проверяем квоту
-        const canAdd = storageManager.canAddFile(req.user.id, f.size);
+        const canAdd = await storageManager.canAddFile(req.user.id, f.size);
         if (!canAdd.allowed) {
-          // удаляем локальную копию и пропускаем
           try { fs.unlinkSync(f.path); } catch (e) {}
           continue;
         }
 
         const fileId = uuid();
-          // Normalize filename for each uploaded file
-          const originalName = (() => {
-            try { return Buffer.from(f.originalname, 'latin1').toString('utf8'); } catch (e) { return f.originalname || String(fileId); }
-          })();
-          const s3Key = await s3Service.uploadFile(fileId, f.path, originalName);
+        const originalName = (() => {
+          try { return Buffer.from(f.originalname, 'latin1').toString('utf8'); } catch (e) { return f.originalname || String(fileId); }
+        })();
+        const s3Key = await s3Service.uploadFile(fileId, f.path, originalName);
 
-        const fileRecord = FilesDB.create(
-          fileId,
-          originalName,
-          f.mimetype,
-          f.size,
-          s3Key,
-          req.user.id
-        );
+        const fileRecord = await File.create({
+          id: fileId,
+          original_filename: originalName,
+          mime_type: f.mimetype,
+          size: f.size,
+          s3_key: s3Key,
+          uploader_id: req.user.id,
+          owner_id: req.user.id,
+          created_at: Date.now(),
+          reference_count: 1
+        });
 
-        storageManager.addFileToQuota(req.user.id, f.size);
+        await storageManager.addFileToQuota(req.user.id, f.size);
 
         try { fs.unlinkSync(f.path); } catch (e) {}
 
-        uploaded.push(fileRecord);
+        uploaded.push(fileRecord.toJSON());
       }
 
-      res.json({ success: true, files: uploaded, storageInfo: storageManager.getStorageInfo(req.user.id) });
+      res.json({ 
+        success: true, 
+        files: uploaded, 
+        storageInfo: await storageManager.getStorageInfo(req.user.id) 
+      });
     } catch (error) {
       console.error('Ошибка множественной загрузки файлов:', error);
       if (req.files) {
@@ -264,7 +291,7 @@ router.use(handleMulterError);
 router.get('/download-file/:fileId', authenticateUser, async (req, res) => {
   try {
     const { fileId } = req.params;
-    const file = FilesDB.getById(fileId);
+    const file = await File.findByPk(fileId);
 
     if (!file) {
       return res.status(404).json({
@@ -274,7 +301,6 @@ router.get('/download-file/:fileId', authenticateUser, async (req, res) => {
     }
 
     // Проверяем доступ к файлу
-    // Доступ имеют: отправитель файла или участники разговора, где находится файл
     let hasAccess = false;
 
     // Проверка 1: пользователь отправил файл
@@ -282,25 +308,26 @@ router.get('/download-file/:fileId', authenticateUser, async (req, res) => {
       hasAccess = true;
     } else {
       // Проверка 2: пользователь участник разговора с этим файлом
-      // Найдём все сообщения с этим файлом
-      const messagesWithFile = db.prepare(
+      const messagesWithFile = await sequelize.query(
         `SELECT DISTINCT m.conversation_id 
          FROM messages m 
          JOIN file_references fr ON m.id = fr.message_id 
-         WHERE fr.file_id = ?`
-      ).all(fileId);
+         WHERE fr.file_id = ?`,
+        { replacements: [fileId], type: sequelize.QueryTypes.SELECT }
+      );
 
       if (messagesWithFile.length > 0) {
-        // Проверим, участник ли пользователь хотя бы одного из этих разговоров
         for (const msg of messagesWithFile) {
-          const conversation = Conversations.getOrCreate([]);
-          const convData = db.prepare('SELECT participant_ids FROM conversations WHERE id = ?').get(msg.conversation_id);
-          if (convData) {
-            const participants = JSON.parse(convData.participant_ids);
-            if (participants.includes(req.user.id)) {
-              hasAccess = true;
-              break;
-            }
+          const conversation = await Conversation.findByPk(msg.conversation_id, {
+            include: [{
+              model: User,
+              as: 'participants',
+              where: { id: req.user.id }
+            }]
+          });
+          if (conversation) {
+            hasAccess = true;
+            break;
           }
         }
       }
@@ -317,7 +344,6 @@ router.get('/download-file/:fileId', authenticateUser, async (req, res) => {
     const s3Url = s3Service.getS3Url(file.s3_key);
 
     // Перенаправляем на S3 с правильным именем файла
-    // Указываем оба поля: `filename` (старые клиенты) и `filename*` (RFC 5987 для UTF-8)
     const fallbackName = (file.original_filename || file.id).replace(/"/g, '');
     const filenameStar = `UTF-8''${encodeURIComponent(fallbackName)}`;
     res.set('Content-Disposition', `attachment; filename="${fallbackName}"; filename*=${filenameStar}`);
@@ -332,7 +358,7 @@ router.get('/download-file/:fileId', authenticateUser, async (req, res) => {
       response.body.pipe(res);
     } catch (fetchErr) {
       console.error('Ошибка скачивания из S3:', fetchErr);
-      // Fallback: попробуем загрузить из S3 в временный файл
+      // Fallback
       const tempPath = path.join(uploadsDir, `temp-${fileId}`);
       try {
         await s3Service.downloadFile(file.s3_key, tempPath);
@@ -360,37 +386,39 @@ router.get('/download-file/:fileId', authenticateUser, async (req, res) => {
 });
 
 // Получение метаданных файла
-router.get('/file/:fileId', authenticateUser, (req, res) => {
+router.get('/file/:fileId', authenticateUser, async (req, res) => {
   try {
     const { fileId } = req.params;
-    const file = FilesDB.getById(fileId);
+    const file = await File.findByPk(fileId);
     console.log(`[/file/${fileId}] Found in DB:`, file ? 'YES' : 'NO');
     if (!file) return res.status(404).json({ success: false, message: 'File not found' });
 
     // Проверяем доступ к файлу
     let hasAccess = false;
 
-    // Проверка 1: пользователь отправил файл
     if (file.uploader_id === req.user.id) {
       hasAccess = true;
     } else {
-      // Проверка 2: пользователь участник разговора с этим файлом
-      const messagesWithFile = db.prepare(
+      const messagesWithFile = await sequelize.query(
         `SELECT DISTINCT m.conversation_id 
          FROM messages m 
          JOIN file_references fr ON m.id = fr.message_id 
-         WHERE fr.file_id = ?`
-      ).all(fileId);
+         WHERE fr.file_id = ?`,
+        { replacements: [fileId], type: sequelize.QueryTypes.SELECT }
+      );
 
       if (messagesWithFile.length > 0) {
         for (const msg of messagesWithFile) {
-          const convData = db.prepare('SELECT participant_ids FROM conversations WHERE id = ?').get(msg.conversation_id);
-          if (convData) {
-            const participants = JSON.parse(convData.participant_ids);
-            if (participants.includes(req.user.id)) {
-              hasAccess = true;
-              break;
-            }
+          const conversation = await Conversation.findByPk(msg.conversation_id, {
+            include: [{
+              model: User,
+              as: 'participants',
+              where: { id: req.user.id }
+            }]
+          });
+          if (conversation) {
+            hasAccess = true;
+            break;
           }
         }
       }
@@ -406,37 +434,44 @@ router.get('/file/:fileId', authenticateUser, (req, res) => {
     // Формируем защищённый URL для просмотра/скачивания через наш маршрут
     const s3Url = `/api/messenger/download-file/${fileId}`;
 
-    res.json({ success: true, file: Object.assign({}, file, { s3Url }) });
+    const fileData = file.toJSON();
+    fileData.s3Url = s3Url;
+    
+    res.json({ success: true, file: fileData });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// Создать короткоживущий токен предпросмотра для использования в <img>/<video>/<audio>
-router.post('/preview-token/:fileId', authenticateUser, (req, res) => {
+// Создать короткоживущий токен предпросмотра
+router.post('/preview-token/:fileId', authenticateUser, async (req, res) => {
   try {
     const { fileId } = req.params;
-    const file = FilesDB.getById(fileId);
+    const file = await File.findByPk(fileId);
     if (!file) return res.status(404).json({ success: false, message: 'Файл не найден' });
 
-    // Проверяем, есть ли доступ к файлу (используем ту же логику, что и в /file/:fileId)
+    // Проверяем доступ к файлу
     let hasAccess = false;
     if (file.uploader_id === req.user.id) {
       hasAccess = true;
     } else {
-      const messagesWithFile = db.prepare(
+      const messagesWithFile = await sequelize.query(
         `SELECT DISTINCT m.conversation_id 
          FROM messages m 
          JOIN file_references fr ON m.id = fr.message_id 
-         WHERE fr.file_id = ?`
-      ).all(fileId);
+         WHERE fr.file_id = ?`,
+        { replacements: [fileId], type: sequelize.QueryTypes.SELECT }
+      );
       if (messagesWithFile.length > 0) {
         for (const msg of messagesWithFile) {
-          const convData = db.prepare('SELECT participant_ids FROM conversations WHERE id = ?').get(msg.conversation_id);
-          if (convData) {
-            const participants = JSON.parse(convData.participant_ids);
-            if (participants.includes(req.user.id)) { hasAccess = true; break; }
-          }
+          const conversation = await Conversation.findByPk(msg.conversation_id, {
+            include: [{
+              model: User,
+              as: 'participants',
+              where: { id: req.user.id }
+            }]
+          });
+          if (conversation) { hasAccess = true; break; }
         }
       }
     }
@@ -444,9 +479,8 @@ router.post('/preview-token/:fileId', authenticateUser, (req, res) => {
     if (!hasAccess) return res.status(403).json({ success: false, message: 'У вас нет доступа к этому файлу' });
 
     const token = generateToken();
-    // Для медиа (audio/video) даём более длинный TTL, чтобы браузер мог поддерживать длительный стрим/seek
     const isMedia = (file.mime_type || '').startsWith('audio/') || (file.mime_type || '').startsWith('video/');
-    const ttl = isMedia ? (60 * 60 * 1000) : (2 * 60 * 1000); // 1 час для медиа, 2 минуты для прочего
+    const ttl = isMedia ? (60 * 60 * 1000) : (2 * 60 * 1000);
     previewTokens.set(token, { fileId, userId: req.user.id, expiresAt: Date.now() + ttl });
 
     res.json({ success: true, token, expiresInMs: ttl });
@@ -456,8 +490,7 @@ router.post('/preview-token/:fileId', authenticateUser, (req, res) => {
   }
 });
 
-// Endpoint для предпросмотра: проверяет токен и стримит файл (без авторизации по заголовку)
-// Поддерживает Range-запросы для медиа
+// Endpoint для предпросмотра
 router.get('/preview/:fileId', async (req, res) => {
   try {
     const { fileId } = req.params;
@@ -467,13 +500,12 @@ router.get('/preview/:fileId', async (req, res) => {
     if (!record || record.fileId !== fileId || record.expiresAt <= Date.now()) {
       return res.status(403).json({ success: false, message: 'Invalid or expired token' });
     }
-    // Don't delete token immediately: allow multiple Range requests until TTL expires
-    const file = FilesDB.getById(fileId);
+    
+    const file = await File.findByPk(fileId);
     if (!file) return res.status(404).json({ success: false, message: 'File not found' });
 
     const s3Url = s3Service.getS3Url(file.s3_key);
 
-    // Forward Range header when present to support seeking
     const rangeHeader = req.headers.range;
     const fetchOptions = {};
     if (rangeHeader) fetchOptions.headers = { Range: rangeHeader };
@@ -482,7 +514,6 @@ router.get('/preview/:fileId', async (req, res) => {
       const response = await fetch(s3Url, fetchOptions);
       if (!response.ok) throw new Error(`S3 returned ${response.status}`);
 
-      // Forward relevant headers (Content-Type, Content-Range, Accept-Ranges, Content-Length)
       const ct = response.headers.get('content-type');
       if (ct) res.set('Content-Type', ct);
       const cr = response.headers.get('content-range');
@@ -496,7 +527,6 @@ router.get('/preview/:fileId', async (req, res) => {
       response.body.pipe(res);
     } catch (fetchErr) {
       console.error('Preview fetch error:', fetchErr);
-      // Fallback: use s3Service.downloadFile into temp file then send (no range support)
       const tempPath = path.join(uploadsDir, `temp-preview-${fileId}`);
       try {
         await s3Service.downloadFile(file.s3_key, tempPath);
@@ -512,11 +542,11 @@ router.get('/preview/:fileId', async (req, res) => {
   }
 });
 
-// Удаление файла (логическое удаление, физическое через 30 дней)
+// Удаление файла
 router.delete('/delete-file/:fileId', authenticateUser, async (req, res) => {
   try {
     const { fileId } = req.params;
-    const file = FilesDB.getById(fileId);
+    const file = await File.findByPk(fileId);
 
     if (!file) {
       return res.status(404).json({
@@ -534,15 +564,15 @@ router.delete('/delete-file/:fileId', authenticateUser, async (req, res) => {
     }
 
     // Логическое удаление
-    FilesDB.delete(fileId);
+    await file.update({ deleted_at: Date.now() });
 
     // Вычитаем из квоты
-    storageManager.removeFileFromQuota(req.user.id, file.size);
+    await storageManager.removeFileFromQuota(req.user.id, file.size);
 
     res.json({
       success: true,
       message: 'Файл отмечен на удаление. Будет удален через 30 дней',
-      storageInfo: storageManager.getStorageInfo(req.user.id)
+      storageInfo: await storageManager.getStorageInfo(req.user.id)
     });
   } catch (error) {
     res.status(500).json({
@@ -552,12 +582,11 @@ router.delete('/delete-file/:fileId', authenticateUser, async (req, res) => {
   }
 });
 
-// Удаление сообщения: если файлы не пересылали — удаляем файла полностью,
-// если файл присутствует в других сообщениях — передаём владение тому, кто переслал
+// Удаление сообщения
 router.delete('/delete-message/:messageId', authenticateUser, async (req, res) => {
   try {
     const { messageId } = req.params;
-    const message = await Messages.getById(messageId);
+    const message = await Message.findByPk(messageId);
     if (!message) return res.status(404).json({ success: false, message: 'Сообщение не найдено' });
 
     // Разрешено удалять только отправителю
@@ -565,50 +594,50 @@ router.delete('/delete-message/:messageId', authenticateUser, async (req, res) =
       return res.status(403).json({ success: false, message: 'Только отправитель может удалить сообщение' });
     }
 
-    const fileIds = Array.isArray(message.file_ids) ? message.file_ids : [];
+    const fileIds = message.file_ids ? JSON.parse(message.file_ids) : [];
 
     for (const fid of fileIds) {
       // Узнаём текущее число ссылок
-      const refs = db.prepare('SELECT COUNT(*) as c FROM file_references WHERE file_id = ?').get(fid);
-      const count = refs ? (refs.c || 0) : 0;
+      const refCount = await FileReference.count({ where: { file_id: fid } });
 
-      if (count <= 1) {
+      if (refCount <= 1) {
         // никто больше не ссылается — удаляем файл полностью
-        const file = FilesDB.getById(fid);
+        const file = await File.findByPk(fid);
         if (file) {
           try {
             await s3Service.deleteFile(file.s3_key);
           } catch (e) { console.error('Ошибка удаления s3 файла:', e); }
-          FilesDB.permanentlyDelete(fid);
+          await file.destroy();
           // вычитаем размер из квоты текущего владельца
-          try { storageManager.removeFileFromQuota(file.owner_id, file.size || 0); } catch (e) { console.error('quota adjust error', e); }
+          try { await storageManager.removeFileFromQuota(file.owner_id, file.size || 0); } catch (e) { console.error('quota adjust error', e); }
         }
       } else {
-        // есть другие ссылки — передаём владение первому другому ссылочнику (переславшему)
-        const other = db.prepare('SELECT message_id FROM file_references WHERE file_id = ? AND message_id != ? LIMIT 1').get(fid, messageId);
-        if (other && other.message_id) {
-          const msg = db.prepare('SELECT sender_id FROM messages WHERE id = ?').get(other.message_id);
-          if (msg && msg.sender_id) {
-            // Передаём владение и скорректируем квоты: убираем у старого владельца и добавляем новому
-            const file = FilesDB.getById(fid);
+        // есть другие ссылки — передаём владение первому другому ссылочнику
+        const otherRef = await FileReference.findOne({
+          where: { file_id: fid, message_id: { [Op.ne]: messageId } }
+        });
+        if (otherRef) {
+          const msg = await Message.findByPk(otherRef.message_id);
+          if (msg) {
+            const file = await File.findByPk(fid);
             const oldOwner = file ? file.owner_id : null;
-            FilesDB.forwardOwnership(fid, msg.sender_id);
+            await file.update({ owner_id: msg.sender_id });
             try {
-              if (oldOwner) storageManager.removeFileFromQuota(oldOwner, file.size || 0);
-              storageManager.addFileToQuota(msg.sender_id, file.size || 0);
+              if (oldOwner) await storageManager.removeFileFromQuota(oldOwner, file.size || 0);
+              await storageManager.addFileToQuota(msg.sender_id, file.size || 0);
             } catch (e) { console.error('quota transfer error', e); }
           }
         }
       }
 
       // Удаляем ссылку из file_references для этого сообщения
-      try { FilesDB.removeReference(fid, messageId); } catch (e) { /* ignore */ }
+      await FileReference.destroy({ where: { file_id: fid, message_id: messageId } });
     }
 
     // Удаляем само сообщение (логическое удаление)
-    Messages.delete(messageId);
+    await message.update({ deleted_at: Date.now() });
 
-    res.json({ success: true, message: 'Сообщение удалено', storageInfo: storageManager.getStorageInfo(req.user.id) });
+    res.json({ success: true, message: 'Сообщение удалено', storageInfo: await storageManager.getStorageInfo(req.user.id) });
   } catch (err) {
     console.error('delete-message error', err);
     res.status(500).json({ success: false, message: err.message });
@@ -616,7 +645,7 @@ router.delete('/delete-message/:messageId', authenticateUser, async (req, res) =
 });
 
 // Создание разговора
-router.post('/conversation/create', authenticateUser, (req, res) => {
+router.post('/conversation/create', authenticateUser, async (req, res) => {
   try {
     const { participantIds } = req.body;
 
@@ -627,16 +656,52 @@ router.post('/conversation/create', authenticateUser, (req, res) => {
       });
     }
 
-    // Добавляем текущего пользователя если его нет (используем userId, а не id)
+    // Добавляем текущего пользователя если его нет
     if (!participantIds.includes(req.user.id)) {
       participantIds.push(req.user.id);
     }
 
-    const conversation = Conversations.getOrCreate(participantIds);
+    // Сортируем ID для уникальности
+    const sortedIds = [...participantIds].sort();
+    
+    // Проверяем, существует ли уже такой разговор
+    const existingConversations = await Conversation.findAll({
+      include: [{
+        model: User,
+        as: 'participants',
+        where: { id: sortedIds }
+      }]
+    });
+
+    let conversation = existingConversations.find(conv => 
+      conv.participants.length === sortedIds.length
+    );
+
+    if (!conversation) {
+      // Создаем новый разговор
+      conversation = await Conversation.create({
+        id: uuid(),
+        created_at: Date.now(),
+        last_message_at: null
+      });
+
+      // Добавляем участников
+      for (const participantId of sortedIds) {
+        await ConversationParticipant.create({
+          conversation_id: conversation.id,
+          participant_id: participantId
+        });
+      }
+    }
 
     res.json({
       success: true,
-      conversation
+      conversation: {
+        id: conversation.id,
+        created_at: conversation.created_at,
+        last_message_at: conversation.last_message_at,
+        participantIds: sortedIds
+      }
     });
   } catch (error) {
     console.error('Error in /conversation/create:', error);
@@ -648,31 +713,49 @@ router.post('/conversation/create', authenticateUser, (req, res) => {
 });
 
 // Получение разговоров пользователя
-router.get('/conversations', authenticateUser, (req, res) => {
+router.get('/conversations', authenticateUser, async (req, res) => {
   try {
-    const conversations = Conversations.getUserConversations(req.user.id);
+    const conversationParticipants = await ConversationParticipant.findAll({
+      where: { participant_id: req.user.id }
+    });
+    
+    const conversationIds = conversationParticipants.map(cp => cp.conversation_id);
+    
+    const conversations = await Conversation.findAll({
+      where: { id: conversationIds },
+      order: [['last_message_at', 'DESC']]
+    });
 
-    // Обогащаем разговоры информацией о других участниках
-    const enrichedConversations = conversations.map(conv => {
-      // Защита: убедимся, что participantIds - это массив
-      const participants = Array.isArray(conv.participantIds) ? conv.participantIds : [];
-      const otherParticipants = participants.filter(pid => pid !== req.user.id);
+    // Обогащаем разговоры информацией об участниках
+    const enrichedConversations = [];
+    
+    for (const conv of conversations) {
+      const participants = await ConversationParticipant.findAll({
+        where: { conversation_id: conv.id }
+      });
+      
+      const participantIds = participants.map(p => p.participant_id);
+      const otherParticipants = participantIds.filter(pid => pid !== req.user.id);
       
       let title = 'Избранное';
       if (otherParticipants.length > 0) {
-        // Для одного участника - берем его userId, для нескольких - "Группа"
         if (otherParticipants.length === 1) {
-          title = otherParticipants[0];
+          const user = await User.findByPk(otherParticipants[0]);
+          title = user ? user.username : otherParticipants[0];
         } else {
           title = `Группа (${otherParticipants.length + 1})`;
         }
       }
-      return {
-        ...conv,
+      
+      enrichedConversations.push({
+        id: conv.id,
+        created_at: conv.created_at,
+        last_message_at: conv.last_message_at,
+        participantIds,
         title,
         otherParticipants
-      };
-    });
+      });
+    }
 
     res.json({
       success: true,
@@ -693,17 +776,44 @@ router.get('/conversation/:conversationId/messages', authenticateUser, async (re
     const { conversationId } = req.params;
     const { limit = 50, offset = 0 } = req.query;
 
-    const messages = await Messages.getConversationMessages(
-      conversationId,
-      parseInt(limit),
-      parseInt(offset)
-    );
+    const messages = await Message.findAll({
+      where: { conversation_id: conversationId },
+      order: [['created_at', 'DESC']],
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+
+    // Обрабатываем сообщения
+    const processedMessages = [];
+    for (const msg of messages) {
+      const messageData = msg.toJSON();
+      
+      if (messageData.content_compressed) {
+        messageData.content = await decompressContent(messageData.content_compressed);
+        delete messageData.content_compressed;
+      }
+      
+      if (messageData.file_ids) {
+        messageData.file_ids = JSON.parse(messageData.file_ids);
+      }
+      
+      // Получаем информацию об отправителе
+      if (messageData.sender_id) {
+        const sender = await User.findByPk(messageData.sender_id);
+        if (sender) {
+          messageData.sender_username = sender.username;
+        }
+      }
+      
+      processedMessages.push(messageData);
+    }
 
     res.json({
       success: true,
-      messages
+      messages: processedMessages.reverse()
     });
   } catch (error) {
+    console.error('Error in /conversation/:conversationId/messages:', error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -716,7 +826,7 @@ router.post('/forward-message', authenticateUser, async (req, res) => {
   try {
     const { messageId, targetConversationId } = req.body;
 
-    const originalMessage = await Messages.getById(messageId);
+    const originalMessage = await Message.findByPk(messageId);
     if (!originalMessage) {
       return res.status(404).json({
         success: false,
@@ -724,22 +834,26 @@ router.post('/forward-message', authenticateUser, async (req, res) => {
       });
     }
 
-    // Создаем новое сообщение со ссылкой на оригинал
-    const newMessage = await Messages.create(
-      uuid(),
-      targetConversationId,
-      req.user.id,
-      originalMessage.content,
-      originalMessage.file_ids,
-      messageId // forwarded_from
-    );
+    // Создаем новое сообщение
+    const newMessage = await Message.create({
+      id: uuid(),
+      conversation_id: targetConversationId,
+      sender_id: req.user.id,
+      content_compressed: originalMessage.content_compressed,
+      file_ids: originalMessage.file_ids,
+      created_at: Date.now(),
+      forwarded_from: messageId
+    });
 
-    Conversations.updateLastMessage(targetConversationId);
+    // Обновляем последнее сообщение в разговоре
+    await Conversation.update(
+      { last_message_at: Date.now() },
+      { where: { id: targetConversationId } }
+    );
 
     // Получаем WebSocket сервер
     const wsServer = req.app.get('wsServer');
     if (wsServer && typeof wsServer.broadcastToConversation === 'function') {
-      // Получим username отправителя
       let senderUsername = req.user.username || req.user.id;
       wsServer.broadcastToConversation(targetConversationId, {
         type: 'new_message',
@@ -748,17 +862,19 @@ router.post('/forward-message', authenticateUser, async (req, res) => {
           conversation_id: newMessage.conversation_id,
           sender_id: newMessage.sender_id,
           sender_username: senderUsername,
-          content: newMessage.content,
-          file_ids: newMessage.file_ids,
-          created_at: Date.now()
+          content: await decompressContent(newMessage.content_compressed),
+          file_ids: JSON.parse(newMessage.file_ids || '[]'),
+          created_at: newMessage.created_at
         }
       });
     }
+    
     res.json({
       success: true,
-      message: newMessage
+      message: newMessage.toJSON()
     });
   } catch (error) {
+    console.error('Error in /forward-message:', error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -766,12 +882,12 @@ router.post('/forward-message', authenticateUser, async (req, res) => {
   }
 });
 
-// Удаление пересланного контента: изменение владельца
+// Изменение владельца файла
 router.post('/file/update-owner', authenticateUser, async (req, res) => {
   try {
     const { fileId, newOwnerId } = req.body;
 
-    const file = FilesDB.getById(fileId);
+    const file = await File.findByPk(fileId);
     if (!file) {
       return res.status(404).json({
         success: false,
@@ -779,7 +895,7 @@ router.post('/file/update-owner', authenticateUser, async (req, res) => {
       });
     }
 
-    // Проверяем права (только текущий владелец может передать)
+    // Проверяем права
     if (file.owner_id !== req.user.id) {
       return res.status(403).json({
         success: false,
@@ -787,14 +903,23 @@ router.post('/file/update-owner', authenticateUser, async (req, res) => {
       });
     }
 
-    FilesDB.forwardOwnership(fileId, newOwnerId);
+    // Сохраняем старый владелец для обновления квот
+    const oldOwnerId = file.owner_id;
+    
+    // Обновляем владельца
+    await file.update({ owner_id: newOwnerId });
+    
+    // Обновляем квоты
+    await storageManager.removeFileFromQuota(oldOwnerId, file.size);
+    await storageManager.addFileToQuota(newOwnerId, file.size);
 
     res.json({
       success: true,
       message: 'Права на файл переданы',
-      file: FilesDB.getById(fileId)
+      file: file.toJSON()
     });
   } catch (error) {
+    console.error('Error in /file/update-owner:', error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -803,15 +928,21 @@ router.post('/file/update-owner', authenticateUser, async (req, res) => {
 });
 
 // Получение файлов пользователя
-router.get('/user-files', authenticateUser, (req, res) => {
+router.get('/user-files', authenticateUser, async (req, res) => {
   try {
-    const files = FilesDB.getUserFiles(req.user.id);
+    const files = await File.findAll({
+      where: { 
+        owner_id: req.user.id,
+        deleted_at: null
+      }
+    });
 
     res.json({
       success: true,
-      files
+      files: files.map(f => f.toJSON())
     });
   } catch (error) {
+    console.error('Error in /user-files:', error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -819,7 +950,7 @@ router.get('/user-files', authenticateUser, (req, res) => {
   }
 });
 
-// Release preview token (called when user stops viewing)
+// Release preview token
 router.post('/preview-release/:token', authenticateUser, (req, res) => {
   try {
     const { token } = req.params;
@@ -842,14 +973,14 @@ router.post('/avatar/upload',
   handleMulterError,
   async (req, res) => {
     try {
-      const userId = req.user.id; // UUID пользователя
+      const userId = req.user.id;
       
       if (!req.file) {
         return res.status(400).json({ success: false, message: 'Файл не загружен' });
       }
 
       const file = req.file;
-      const MAX_AVATAR_SIZE = 64 * 1024 * 1024; // 64MB
+      const MAX_AVATAR_SIZE = 64 * 1024 * 1024;
 
       if (file.size > MAX_AVATAR_SIZE) {
         fs.unlinkSync(file.path);
@@ -872,23 +1003,25 @@ router.post('/avatar/upload',
       const s3Key = await s3Service.uploadFile(fileId, file.path, file.originalname);
 
       // Создаем запись о файле аватарки
-      FilesDB.create(
-        fileId,
-        file.originalname,
-        file.mimetype,
-        file.size,
-        s3Key,
-        userId,
-        userId
-      );
+      await File.create({
+        id: fileId,
+        original_filename: file.originalname,
+        mime_type: file.mimetype,
+        size: file.size,
+        s3_key: s3Key,
+        uploader_id: userId,
+        owner_id: userId,
+        created_at: Date.now(),
+        reference_count: 1
+      });
 
       // Удаляем старую аватарку если существует
       if (req.user && req.user.avatar_file_id) {
         try {
-          const oldFile = FilesDB.getById(req.user.avatar_file_id);
+          const oldFile = await File.findByPk(req.user.avatar_file_id);
           if (oldFile) {
             await s3Service.deleteFile(oldFile.s3_key);
-            FilesDB.delete(oldFile.id);
+            await oldFile.destroy();
           }
         } catch (e) {
           console.error('Error deleting old avatar:', e);
@@ -896,7 +1029,7 @@ router.post('/avatar/upload',
       }
 
       // Обновляем user с новой аватаркой
-      Users.update(userId, { avatar_file_id: fileId });
+      await User.update({ avatar_file_id: fileId }, { where: { id: userId } });
 
       // Очищаем локальный файл
       try {
@@ -935,7 +1068,7 @@ router.post('/avatar/upload',
 router.delete('/avatar', authenticateUser, async (req, res) => {
   try {
     const userId = req.user.id;
-    const user = Users.getById(userId);
+    const user = await User.findByPk(userId);
 
     if (!user || !user.avatar_file_id) {
       return res.status(404).json({ 
@@ -944,13 +1077,13 @@ router.delete('/avatar', authenticateUser, async (req, res) => {
       });
     }
 
-    const avatarFile = FilesDB.getById(user.avatar_file_id);
+    const avatarFile = await File.findByPk(user.avatar_file_id);
     if (avatarFile) {
       await s3Service.deleteFile(avatarFile.s3_key);
-      FilesDB.delete(avatarFile.id);
+      await avatarFile.destroy();
     }
 
-    Users.update(userId, { avatar_file_id: null });
+    await User.update({ avatar_file_id: null }, { where: { id: userId } });
 
     res.json({ 
       success: true, 
@@ -969,7 +1102,7 @@ router.delete('/avatar', authenticateUser, async (req, res) => {
 router.get('/avatar/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    const user = Users.getById(userId);
+    const user = await User.findByPk(userId);
 
     if (!user || !user.avatar_file_id) {
       return res.status(404).json({ 
@@ -978,7 +1111,7 @@ router.get('/avatar/:userId', async (req, res) => {
       });
     }
 
-    const avatarFile = FilesDB.getById(user.avatar_file_id);
+    const avatarFile = await File.findByPk(user.avatar_file_id);
     if (!avatarFile) {
       return res.status(404).json({ 
         success: false, 

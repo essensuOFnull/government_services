@@ -1,1 +1,0 @@
-UPDATE messages SET content_compressed = ?, edited_at = ? WHERE id = ?;

@@ -1,1 +1,0 @@
-INSERT OR IGNORE INTO user_storage_quota (user_id, storage_limit_bytes) VALUES (?, ?);

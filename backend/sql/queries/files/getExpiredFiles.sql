@@ -1,1 +1,0 @@
-SELECT * FROM files WHERE deleted_at IS NOT NULL AND datetime(deleted_at, '+' || delete_after_days || ' days') <= datetime('now') AND reference_count = 0;

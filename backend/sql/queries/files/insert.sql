@@ -1,1 +1,0 @@
-INSERT INTO files (id, original_filename, mime_type, size, s3_key, uploader_id, owner_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?);

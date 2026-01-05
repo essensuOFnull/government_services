@@ -1,8 +1,19 @@
+require('dotenv').config();
+
 const schedule = require('node-schedule');
-const { Files, Storage, Users } = require('./database.cjs');
-const s3Service = require('./messenger-s3.cjs');
 const fs = require('fs');
 const path = require('path');
+
+// Импорт Sequelize моделей
+const {
+  User,
+  File,
+  UserStorageQuota,
+  Op,
+  sequelize
+} = require('./database.cjs');
+
+const s3Service = require('./messenger-s3.cjs');
 
 const uploadsDir = process.env.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
 
@@ -11,7 +22,7 @@ class StorageManager {
     this.cleanupInterval = null;
   }
 
-  // Запуск очистки старых файлов (каждый день в 2:00 утра)
+  // Запуск очистки старых файлов
   startCleanupScheduler() {
     this.cleanupInterval = schedule.scheduleJob('0 2 * * *', async () => {
       console.log('🧹 Начинается очистка устаревших файлов...');
@@ -24,7 +35,13 @@ class StorageManager {
   // Очистка файлов, удаленных 30+ дней назад
   async cleanupExpiredFiles() {
     try {
-      const expiredFiles = Files.getExpiredFiles(30);
+      const expiredDate = Date.now() - (30 * 24 * 60 * 60 * 1000);
+      const expiredFiles = await File.findAll({
+        where: {
+          deleted_at: { [Op.ne]: null },
+          [Op.lt]: expiredDate
+        }
+      });
 
       for (const file of expiredFiles) {
         try {
@@ -38,10 +55,10 @@ class StorageManager {
           }
 
           // Удаляем из БД
-          Files.permanentlyDelete(file.id);
+          await file.destroy();
 
           // Вычитаем размер из квоты пользователя
-          Storage.removeFromUsedStorage(file.owner_id, file.size);
+          await this.removeFileFromQuota(file.owner_id, file.size);
 
           console.log(`🗑️  Удален файл: ${file.id} (${file.original_filename})`);
         } catch (error) {
@@ -56,21 +73,43 @@ class StorageManager {
   }
 
   // Проверка квоты пользователя
-  checkUserQuota(userId) {
-    const user = Users.getById(userId);
+  async checkUserQuota(userId) {
+    const user = await User.findByPk(userId);
     if (!user) {
       throw new Error('Пользователь не найден');
     }
 
-    const quota = Storage.getQuota(userId);
-    const userFiles = Files.getUserFiles(userId);
-    const usedStorage = userFiles.reduce((sum, file) => sum + file.size, 0);
-
-    // Определяем лимит в зависимости от роли
-    let limit = null; // null = без ограничений
-    if (user.role === 'guest') {
-      limit = 10 * 1024 * 1024 * 1024; // 10GB
+    // Получаем или создаем квоту
+    let quota = await UserStorageQuota.findOne({ where: { user_id: userId } });
+    if (!quota) {
+      let storage_limit_bytes = null;
+      if (user.role === 'guest') {
+        storage_limit_bytes = 10 * 1024 * 1024 * 1024; // 10GB
+      }
+      quota = await UserStorageQuota.create({
+        user_id: userId,
+        storage_limit_bytes,
+        storage_used_bytes: 0
+      });
     }
+
+    // Получаем файлы пользователя
+    const userFiles = await File.findAll({
+      where: { 
+        owner_id: userId,
+        deleted_at: null 
+      }
+    });
+
+    const usedStorage = userFiles.reduce((sum, file) => sum + (file.size || 0), 0);
+
+    // Обновляем usedStorage если нужно
+    if (quota.storage_used_bytes !== usedStorage) {
+      quota.storage_used_bytes = usedStorage;
+      await quota.save();
+    }
+
+    let limit = quota.storage_limit_bytes;
 
     return {
       userId,
@@ -84,11 +123,11 @@ class StorageManager {
   }
 
   // Получение информации о хранилище для фронтенда
-  getStorageInfo(userId) {
-    const quotaInfo = this.checkUserQuota(userId);
+  async getStorageInfo(userId) {
+    const quotaInfo = await this.checkUserQuota(userId);
     const serverFreeSpace = this.getServerFreeSpace();
 
-    const MIN_SERVER_SPACE = 10 * 1024 * 1024 * 1024; // 10GB
+    const MIN_SERVER_SPACE = 10 * 1024 * 1024 * 1024;
 
     if (serverFreeSpace < MIN_SERVER_SPACE) {
       return {
@@ -118,11 +157,11 @@ class StorageManager {
   }
 
   // Проверка перед добавлением файла
-  canAddFile(userId, fileSize) {
-    const quotaInfo = this.checkUserQuota(userId);
+  async canAddFile(userId, fileSize) {
+    const quotaInfo = await this.checkUserQuota(userId);
     const serverFreeSpace = this.getServerFreeSpace();
 
-    const MIN_SERVER_SPACE = 10 * 1024 * 1024 * 1024; // 10GB
+    const MIN_SERVER_SPACE = 10 * 1024 * 1024 * 1024;
 
     // Проверка свободного места на сервере
     if (serverFreeSpace < MIN_SERVER_SPACE) {
@@ -149,43 +188,83 @@ class StorageManager {
   }
 
   // Добавление размера к квоте пользователя
-  addFileToQuota(userId, fileSize) {
-    Storage.addToUsedStorage(userId, fileSize);
+  async addFileToQuota(userId, fileSize) {
+    const quota = await UserStorageQuota.findOne({ where: { user_id: userId } });
+    if (quota) {
+      quota.storage_used_bytes = (quota.storage_used_bytes || 0) + fileSize;
+      await quota.save();
+    }
   }
 
   // Удаление размера из квоты пользователя
-  removeFileFromQuota(userId, fileSize) {
-    Storage.removeFromUsedStorage(userId, fileSize);
+  async removeFileFromQuota(userId, fileSize) {
+    const quota = await UserStorageQuota.findOne({ where: { user_id: userId } });
+    if (quota) {
+      quota.storage_used_bytes = Math.max(0, (quota.storage_used_bytes || 0) - fileSize);
+      await quota.save();
+    }
   }
 
   // Пересчет всей квоты пользователя
-  recalculateUserQuota(userId) {
-    const userFiles = Files.getUserFiles(userId);
-    const totalSize = userFiles.reduce((sum, file) => sum + file.size, 0);
+  async recalculateUserQuota(userId) {
+    const userFiles = await File.findAll({
+      where: { 
+        owner_id: userId,
+        deleted_at: null 
+      }
+    });
+    const totalSize = userFiles.reduce((sum, file) => sum + (file.size || 0), 0);
 
-    Storage.updateQuota(userId, totalSize);
+    let quota = await UserStorageQuota.findOne({ where: { user_id: userId } });
+    if (quota) {
+      quota.storage_used_bytes = totalSize;
+      await quota.save();
+    } else {
+      quota = await UserStorageQuota.create({
+        user_id: userId,
+        storage_used_bytes: totalSize
+      });
+    }
     return totalSize;
   }
 
   // Функция получения свободного места на диске
   getServerFreeSpace() {
     try {
-      const checkDiskSpace = require('check-disk-space').default;
-      const path = process.env.UPLOAD_DIR || 'C:/government_services/data';
-      
-      // Синхронный способ через fs.statfsSync (доступен в Node.js)
       const fs = require('fs');
-      if (fs.statfsSync) {
-        const stats = fs.statfsSync(path);
-        const freeSpace = stats.bavail * stats.bsize; // доступное свободное место в байтах
-        return freeSpace;
+      const path = require('path');
+      
+      // Проверяем директорию загрузок
+      const checkPath = uploadsDir || __dirname;
+      
+      try {
+        const stats = fs.statfsSync ? fs.statfsSync(checkPath) : null;
+        if (stats) {
+          const freeSpace = stats.bavail * stats.bsize;
+          return freeSpace;
+        }
+      } catch (e) {}
+      
+      // Для Windows или если statfsSync не доступен
+      if (process.platform === 'win32') {
+        try {
+          const execSync = require('child_process').execSync;
+          const result = execSync(
+            'wmic logicaldisk where "DeviceID=\'C:\'" get FreeSpace',
+            { encoding: 'utf-8' }
+          ).trim();
+          const lines = result.split('\n');
+          if (lines.length > 1) {
+            return parseInt(lines[1].trim()) || 100 * 1024 * 1024 * 1024;
+          }
+        } catch (e) {}
       }
       
-      // Fallback: вернуть большое значение если не удалось определить
-      return 100 * 1024 * 1024 * 1024; // 100GB по умолчанию
+      // Fallback
+      return 100 * 1024 * 1024 * 1024;
     } catch (error) {
       console.error('Ошибка получения свободного места на диске:', error);
-      return 100 * 1024 * 1024 * 1024; // 100GB fallback
+      return 100 * 1024 * 1024 * 1024;
     }
   }
 

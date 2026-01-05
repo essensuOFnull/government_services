@@ -1,1 +1,0 @@
-UPDATE user_storage_quota SET storage_used_bytes = storage_used_bytes + ? WHERE user_id = ?;

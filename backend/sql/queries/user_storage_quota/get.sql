@@ -1,1 +1,0 @@
-SELECT * FROM user_storage_quota WHERE user_id = ?;
