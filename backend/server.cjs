@@ -100,7 +100,7 @@ app.post('/api/register', async (req, res) => {
 
     // Проверяем, существует ли пользователь
     const existingUser = await User.findOne({ 
-      where: { username: username.toLowerCase() } 
+      where: { username: username } 
     });
 
     if (existingUser) {
@@ -118,7 +118,7 @@ app.post('/api/register', async (req, res) => {
     // Создаем пользователя
     const user = await User.create({
       id: userId,
-      username: username.toLowerCase(),
+      username: username,
       password: hashedPassword,
       role: 'guest',
       status: 'offline',
@@ -169,7 +169,7 @@ app.post('/api/login', async (req, res) => {
 
     // Ищем пользователя
     const user = await User.findOne({ 
-      where: { username: username.toLowerCase() } 
+      where: { username: username } 
     });
 
     if (!user) {
@@ -189,7 +189,7 @@ app.post('/api/login', async (req, res) => {
           id: uuid(),
           ip,
           type: 'failed',
-          username: username.toLowerCase(),
+          username: username,
           created_at: Date.now()
         });
       } catch (e) {
@@ -208,7 +208,7 @@ app.post('/api/login', async (req, res) => {
         id: uuid(),
         ip,
         type: 'success',
-        username: username.toLowerCase(),
+        username: username,
         created_at: Date.now()
       });
     } catch (e) {
@@ -254,7 +254,7 @@ app.post('/api/change-username', async (req, res) => {
     // Проверяем, не занято ли имя
     const existingUser = await User.findOne({ 
       where: { 
-        username: newUsername.toLowerCase(),
+        username: newUsername,
         id: { [Op.ne]: id }
       } 
     });
@@ -269,7 +269,7 @@ app.post('/api/change-username', async (req, res) => {
     // Обновляем имя пользователя
     await User.update(
       { 
-        username: newUsername.toLowerCase(), 
+        username: newUsername, 
         updated_at: Date.now() 
       },
       { where: { id } }
