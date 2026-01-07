@@ -88,26 +88,28 @@ export default function AuthorizationWindow({ onClose }) {
 						)}
 						<p><strong>Вход</strong></p>
 						<div className='window' style={{padding:'16px'}}>
-							<label>Имя пользователя:</label>
-							<br/><br/>
-							<input
-								type="text"
-								value={username}
-								onChange={(e) => setUsername(e.target.value)}
-								required
-								disabled={loading}
-							/>
+							<div className='field-row-stacked'>
+								<label>Имя пользователя:</label>
+								<input
+									type="text"
+									value={username}
+									onChange={(e) => setUsername(e.target.value)}
+									required
+									disabled={loading}
+								/>
+							</div>
 						</div>
 						<div className='window' style={{padding:'16px'}}>
-							<label>Пароль:</label>
-							<br/><br/>
-							<input
-								type="password"
-								value={password}
-								onChange={(e) => setPassword(e.target.value)}
-								required
-								disabled={loading}
-							/>
+							<div className='field-row-stacked'>
+								<label>Пароль:</label>
+								<input
+									type="password"
+									value={password}
+									onChange={(e) => setPassword(e.target.value)}
+									required
+									disabled={loading}
+								/>
+							</div>
 						</div>
 						<br/>
 						<button 
@@ -134,46 +136,43 @@ export default function AuthorizationWindow({ onClose }) {
 							Роль по умолчанию: <strong>Гость</strong> (10 ГБ хранилища)
 						</p>
 						<div className='window' style={{padding:'16px'}}>
-							<label>
-								Имя пользователя (3-20 символов):
-							</label>
-							<br/><br/>
-							<input
-								type="text"
-								value={username}
-								onChange={(e) => setUsername(e.target.value)}
-								required
-								disabled={loading}
-								placeholder="Введите имя пользователя"
-							/>
+							<div className='field-row-stacked'>
+								<label>Имя пользователя (3-20 символов):</label>
+								<input
+									type="text"
+									value={username}
+									onChange={(e) => setUsername(e.target.value)}
+									required
+									disabled={loading}
+									placeholder="Введите имя пользователя"
+								/>
+							</div>
 						</div>
 						<div className='window' style={{padding:'16px'}}>
-							<label>
-								Пароль (мин. 8 символов, буквы и цифры):
-							</label>
-							<br/><br/>
-							<input
-								type="password"
-								value={password}
-								onChange={(e) => setPassword(e.target.value)}
-								required
-								disabled={loading}
-								placeholder="Введите пароль"
-							/>
+							<div className='field-row-stacked'>
+								<label>Пароль (мин. 8 символов, буквы и цифры):</label>
+								<input
+									type="password"
+									value={password}
+									onChange={(e) => setPassword(e.target.value)}
+									required
+									disabled={loading}
+									placeholder="Введите пароль"
+								/>
+							</div>
 						</div>
 						<div className='window' style={{padding:'16px'}}>
-							<label>
-								Подтвердите пароль:
-							</label>
-							<br/><br/>
-							<input
-								type="password"
-								value={confirmPassword}
-								onChange={(e) => setConfirmPassword(e.target.value)}
-								required
-								disabled={loading}
-								placeholder="Повторите пароль"
-							/>
+							<div className='field-row-stacked'>
+								<label>Подтвердите пароль:</label>
+								<input
+									type="password"
+									value={confirmPassword}
+									onChange={(e) => setConfirmPassword(e.target.value)}
+									required
+									disabled={loading}
+									placeholder="Повторите пароль"
+								/>
+							</div>
 						</div>
 						<br/>
 						<button 

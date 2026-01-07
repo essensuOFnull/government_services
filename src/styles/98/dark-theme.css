@@ -1,0 +1,155 @@
+/**
+ * 98.css - темная тема
+ */
+
+body.dark-theme {
+    /* Color - очень темные цвета */
+    --text-color: #e0e0e0;
+    --surface: #0a0a0a;
+    --button-highlight: #2a2a2a;  /* Изменено: стал светлее */
+    --button-face: #1a1a1a;       /* Изменено: стал темнее */
+    --button-shadow: #000000;     /* Изменено: стал черным */
+    --window-frame: #000000;
+    --dialog-blue: #000050;
+    --dialog-blue-light: #0060a0;
+    --dialog-gray: #505050;
+    --dialog-gray-light: #707070;
+    --link-blue: #4a86e8;
+
+    /* Shadows для темной темы - исправленные значения */
+    --shadow-inner-1: inset -1px -1px 0 #000000, inset 1px 1px 0 #404040;
+    --shadow-inner-2: inset -1px -1px 0 #000000, inset 1px 1px 0 #404040, inset -2px -2px 0 #404040, inset 2px 2px 0 #2a2a2a;
+    
+    /* Borders - исправленные значения для объемности */
+    --border-raised-outer: inset -1px -1px var(--window-frame),
+        inset 1px 1px var(--button-highlight);
+    --border-raised-inner: inset -2px -2px var(--button-shadow),
+        inset 2px 2px var(--button-face);
+    --border-sunken-outer: inset -1px -1px var(--button-highlight),
+        inset 1px 1px var(--window-frame);
+    --border-sunken-inner: inset -2px -2px var(--button-face),
+        inset 2px 2px var(--button-shadow);
+    
+    /* Исправленные значения для дефолтных кнопок */
+    --default-button-border-raised-outer: inset -1px -1px var(--window-frame), 
+        inset 1px 1px var(--window-frame);
+    --default-button-border-raised-inner: inset 2px 2px var(--button-highlight), 
+        inset -3px -3px var(--button-shadow), 
+        inset 3px 3px var(--button-face);
+    --default-button-border-sunken-outer: inset 2px 2px var(--window-frame), 
+        inset -1px -1px var(--window-frame);
+    --default-button-border-sunken-inner: inset -2px -2px var(--button-highlight), 
+        inset 3px 3px var(--button-shadow), 
+        inset -3px -3px var(--button-face);
+
+    /* Window borders - исправленные значения */
+    --border-window-outer: inset -1px -1px var(--window-frame),
+        inset 1px 1px var(--button-face);
+    --border-window-inner: inset -2px -2px var(--button-shadow),
+        inset 2px 2px var(--button-highlight);
+
+    /* Field borders - исправленные значения */
+    --border-field: inset -1px -1px var(--button-highlight),
+        inset 1px 1px var(--button-shadow), 
+        inset -2px -2px var(--button-face),
+        inset 2px 2px var(--window-frame);
+        
+    --border-status-field: inset -1px -1px var(--button-face), 
+        inset 1px 1px var(--button-shadow);
+
+    /* Tabs - исправленные значения */
+    --border-tab: inset -1px 0 var(--window-frame),
+        inset 1px 1px var(--button-face),
+        inset -2px 0 var(--button-shadow),
+        inset 2px 2px var(--button-highlight);
+}
+
+body.dark-theme {
+    background: #001a1a; /* Темный вариант #008080 */
+}
+
+/*иконки*/
+body.dark-theme .title-bar-controls button[aria-label="Minimize"],
+body.dark-theme .title-bar-controls button[aria-label].minimize {
+    background-image: url("icons/dark-theme/minimize.png");
+}
+body.dark-theme .title-bar-controls button[aria-label="Maximize"],
+body.dark-theme .title-bar-controls button[aria-label].maximize {
+    background-image: url("icons/dark-theme/maximize.png");
+}
+body.dark-theme .title-bar-controls button[aria-label="Maximize"]:disabled,
+body.dark-theme .title-bar-controls button[aria-label].maximize:disabled {
+    background-image: url("icons/dark-theme/maximize-disabled.png");
+}
+body.dark-theme .title-bar-controls button[aria-label="Restore"],
+body.dark-theme .title-bar-controls button[aria-label].restore {
+    background-image: url("icons/dark-theme/restore.png");
+}
+body.dark-theme .title-bar-controls button[aria-label="Help"],
+body.dark-theme .title-bar-controls button[aria-label].help {
+    background-image: url("icons/dark-theme/help.png");
+}
+body.dark-theme .title-bar-controls button[aria-label="Close"],
+body.dark-theme .title-bar-controls button[aria-label].close {
+    background-image: url("icons/dark-theme/close.png");
+}
+body.dark-theme fieldset {
+    border-image: url("icons/dark-theme/groupbox-border.png") 2;
+}
+body.dark-theme input[type="radio"] + label::before {
+    background: url("icons/dark-theme/radio-border.png");
+}
+body.dark-theme input[type="radio"]:active + label::before {
+    background: url("icons/dark-theme/radio-border-disabled.png");
+}
+body.dark-theme input[type="radio"]:checked + label::after {
+    background: url("icons/dark-theme/radio-dot.png");
+}
+body.dark-theme input[type="radio"][disabled] + label::before {
+    background: url("icons/dark-theme/radio-border-disabled.png");
+}
+body.dark-theme input[type="radio"][disabled]:checked + label::after {
+    background: url("icons/dark-theme/radio-dot-disabled.png");
+}
+body.dark-theme input[type="checkbox"]:checked + label::after {
+    background: url("icons/dark-theme/checkmark.png");
+}
+body.dark-theme input[type="checkbox"][disabled]:checked + label::after {
+    background: url("icons/dark-theme/checkmark-disabled.png");
+}
+body.dark-theme select {
+    background-image: url("icons/dark-theme/button-down.png");
+}
+body.dark-theme input[type="range"]::-webkit-slider-thumb {
+    background: url("icons/dark-theme/indicator-horizontal.png");
+}
+body.dark-theme input[type="range"].has-box-indicator::-webkit-slider-thumb {
+    background: url("icons/dark-theme/indicator-rectangle-horizontal.png");
+}
+body.dark-theme input[type="range"]::-moz-range-thumb {
+    background: url("icons/dark-theme/indicator-horizontal.png");
+}
+body.dark-theme input[type="range"].has-box-indicator::-moz-range-thumb {
+    background: url("icons/dark-theme/indicator-rectangle-horizontal.png");
+}
+body.dark-theme select:active {
+    background-image: url("icons/dark-theme/button-down-active.png");
+}
+body.dark-theme ::-webkit-scrollbar-track {
+    background-image: url("icons/dark-theme/scrollbar-background.png");
+}
+body.dark-theme ::-webkit-scrollbar-button:vertical:start {
+    background-image: url("icons/dark-theme/button-up.png");
+}
+body.dark-theme ::-webkit-scrollbar-button:vertical:end {
+    background-image: url("icons/dark-theme/button-down.png");
+}
+body.dark-theme ::-webkit-scrollbar-button:horizontal:start {
+    background-image: url("icons/dark-theme/button-left.png");
+}
+body.dark-theme ::-webkit-scrollbar-button:horizontal:end {
+    background-image: url("icons/dark-theme/button-right.png");
+}
+body.dark-theme .sunken-panel {
+    border-image: url("icons/dark-theme/sunken-panel-border.png") 2;
+}

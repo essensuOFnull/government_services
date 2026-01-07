@@ -10,7 +10,6 @@ import MenuWindow from './MenuWindow';
 function MainApp() {
   const { user, loading, isAuthenticated } = useAuthContext();
   const { windows, openWindow, closeWindow, updateWindow, bringToFront, minimizeWindow } = useWindowsManager();
-
   // Автоматическое открытие окна входа при загрузке
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -66,25 +65,23 @@ function MainApp() {
           {windowData.children}
         </Window>
       ))}
-      {isAuthenticated && (
-        <Taskbar 
-          windows={windows}
-          onWindowClick={bringToFront}
-          onClickMainButton={() => {
-            openWindow({
-              title: 'Меню услуг',
-              children: <MenuWindow />,
-            });
-          }}
-          user={user}
-          onProfileClick={() => {
-            openWindow({
-              title: 'Профиль',
-              children: <ProfileWindow />,
-            });
-          }}
-        />
-      )}
+      <Taskbar 
+        windows={windows}
+        onWindowClick={bringToFront}
+        onClickMainButton={() => {
+          openWindow({
+            title: 'Меню услуг',
+            children: <MenuWindow />,
+          });
+        }}
+        user={user}
+        onProfileClick={() => {
+          openWindow({
+            title: 'Профиль',
+            children: <ProfileWindow />,
+          });
+        }}
+      />
     </>
   );
 }
