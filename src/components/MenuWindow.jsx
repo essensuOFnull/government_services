@@ -1,4 +1,3 @@
-import Window from './Window';
 import { useState } from 'react';
 import Messenger from './Messenger';
 import { useWindowsManager } from '../hooks/useWindowsManager';
@@ -42,7 +41,7 @@ export default function MenuWindow({ userId }) {
 				<li role="tab" aria-selected={activeTab === 0} onClick={() => setActiveTab(0)}><a>Мессенджер</a></li>
 				<li role="tab" aria-selected={activeTab === 1} onClick={() => setActiveTab(1)}><a>Хранилище</a></li>
 				<li role="tab" aria-selected={activeTab === 2} onClick={() => setActiveTab(2)}><a>Организации</a></li>
-				<li role="tab" aria-selected={activeTab === 2} onClick={() => setActiveTab(2)}><a>Калькуляторы</a></li>
+				<li role="tab" aria-selected={activeTab === 3} onClick={() => setActiveTab(3)}><a>Калькуляторы</a></li>
 			</menu>
 			<div className="window" role="tabpanel" style={{ display: activeTab === 0 ? 'block' : 'none' }}>
 				<div className="window-body">
@@ -251,7 +250,7 @@ export default function MenuWindow({ userId }) {
 					</ul>
 				</div>
 			</div>
-			<div className="window" role="tabpanel" style={{ display: activeTab === 2 ? 'block' : 'none' }}>
+			<div className="window" role="tabpanel" style={{ display: activeTab === 3 ? 'block' : 'none' }}>
 				<div className="window-body">
 					<ul className="tree-view">
 						<li>
