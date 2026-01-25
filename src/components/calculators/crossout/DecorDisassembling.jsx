@@ -85,8 +85,7 @@ export default function DecorDisassembling() {
 							<thead>
 								<tr>
 									<th colSpan={3} style={{whiteSpace: 'normal'}}>
-										Введите за сколько вы будете продавать каждый из данных видов ресурсов 
-										<b style={{textDecoration:'underline'}}> БЕЗ</b> учёта комиссии
+										Введите за сколько вы будете продавать каждый из данных видов ресурсов <b style={{textDecoration:'underline'}}>БЕЗ</b> учёта комиссии
 									</th>
 								</tr>
 								<tr>
@@ -245,7 +244,6 @@ export default function DecorDisassembling() {
 											{calculateResults[y]?.grossValue || '0.00'} монет
 										</td>
 										<td style={{
-											background: parseFloat(calculateResults[y]?.netValue || 0) > 0 ? '#d4edda' : 'transparent',
 											fontWeight: 'bold'
 										}}>
 											{calculateResults[y]?.netValue || '0.00'} монет
@@ -274,7 +272,7 @@ export default function DecorDisassembling() {
 							marginTop: '15px',
 							fontStyle: 'italic',
 							textAlign: 'center',
-							background: '#fff3cd',
+							background: '#fff3cd56',
 							padding: '10px',
 							borderRadius: '5px'
 						}}>
