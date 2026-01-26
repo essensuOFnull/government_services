@@ -349,6 +349,7 @@ export default function Window(props) {
 				<div className="title-bar-text">{title}</div>
 				{showControls && (
 					<div className="title-bar-controls">
+						<button aria-label="Download" onClick={()=>{}}></button>
 						<button aria-label="Minimize" onClick={handleMinimize}></button>
 						<button 
 							aria-label={isMaximized ? "Restore" : "Maximize"} 

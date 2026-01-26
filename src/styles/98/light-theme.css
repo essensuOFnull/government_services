@@ -67,87 +67,91 @@ body.light-theme {
 }
 
 /*иконки*/
+body.light-theme .title-bar-controls button[aria-label="Download"],
+body.light-theme .title-bar-controls button[aria-label].download {
+    background-image: url("icons98/light-theme/download.png");
+}
 body.light-theme .title-bar-controls button[aria-label="Minimize"],
 body.light-theme .title-bar-controls button[aria-label].minimize {
-    background-image: url("icons/light-theme/minimize.svg");
+    background-image: url("icons98/light-theme/minimize.svg");
 }
 body.light-theme .title-bar-controls button[aria-label="Maximize"],
 body.light-theme .title-bar-controls button[aria-label].maximize {
-    background-image: url("icons/light-theme/maximize.svg");
+    background-image: url("icons98/light-theme/maximize.svg");
 }
 body.light-theme .title-bar-controls button[aria-label="Maximize"]:disabled,
 body.light-theme .title-bar-controls button[aria-label].maximize:disabled {
-    background-image: url("icons/light-theme/maximize-disabled.svg");
+    background-image: url("icons98/light-theme/maximize-disabled.svg");
 }
 body.light-theme .title-bar-controls button[aria-label="Restore"],
 body.light-theme .title-bar-controls button[aria-label].restore {
-    background-image: url("icons/light-theme/restore.svg");
+    background-image: url("icons98/light-theme/restore.svg");
 }
 body.light-theme .title-bar-controls button[aria-label="Help"],
 body.light-theme .title-bar-controls button[aria-label].help {
-    background-image: url("icons/light-theme/help.svg");
+    background-image: url("icons98/light-theme/help.svg");
 }
 body.light-theme .title-bar-controls button[aria-label="Close"],
 body.light-theme .title-bar-controls button[aria-label].close {
-    background-image: url("icons/light-theme/close.svg");
+    background-image: url("icons98/light-theme/close.svg");
 }
 body.light-theme fieldset {
-    border-image: url("icons/light-theme/groupbox-border.svg") 2;
+    border-image: url("icons98/light-theme/groupbox-border.svg") 2;
 }
 body.light-theme input[type="radio"] + label::before {
-    background: url("icons/light-theme/radio-border.svg");
+    background: url("icons98/light-theme/radio-border.svg");
 }
 body.light-theme input[type="radio"]:active + label::before {
-    background: url("icons/light-theme/radio-border-disabled.svg");
+    background: url("icons98/light-theme/radio-border-disabled.svg");
 }
 body.light-theme input[type="radio"]:checked + label::after {
-    background: url("icons/light-theme/radio-dot.svg");
+    background: url("icons98/light-theme/radio-dot.svg");
 }
 body.light-theme input[type="radio"][disabled] + label::before {
-    background: url("icons/light-theme/radio-border-disabled.svg");
+    background: url("icons98/light-theme/radio-border-disabled.svg");
 }
 body.light-theme input[type="radio"][disabled]:checked + label::after {
-    background: url("icons/light-theme/radio-dot-disabled.svg");
+    background: url("icons98/light-theme/radio-dot-disabled.svg");
 }
 body.light-theme input[type="checkbox"]:checked + label::after {
-    background: url("icons/light-theme/checkmark.svg");
+    background: url("icons98/light-theme/checkmark.svg");
 }
 body.light-theme input[type="checkbox"][disabled]:checked + label::after {
-    background: url("icons/light-theme/checkmark-disabled.svg");
+    background: url("icons98/light-theme/checkmark-disabled.svg");
 }
 body.light-theme select {
-    background-image: url("icons/light-theme/button-down.svg");
+    background-image: url("icons98/light-theme/button-down.svg");
 }
 body.light-theme input[type="range"]::-webkit-slider-thumb {
-    background: url("icons/light-theme/indicator-horizontal.svg");
+    background: url("icons98/light-theme/indicator-horizontal.svg");
 }
 body.light-theme input[type="range"].has-box-indicator::-webkit-slider-thumb {
-    background: url("icons/light-theme/indicator-rectangle-horizontal.svg");
+    background: url("icons98/light-theme/indicator-rectangle-horizontal.svg");
 }
 body.light-theme input[type="range"]::-moz-range-thumb {
-    background: url("icons/light-theme/indicator-horizontal.svg");
+    background: url("icons98/light-theme/indicator-horizontal.svg");
 }
 body.light-theme input[type="range"].has-box-indicator::-moz-range-thumb {
-    background: url("icons/light-theme/indicator-rectangle-horizontal.svg");
+    background: url("icons98/light-theme/indicator-rectangle-horizontal.svg");
 }
 body.light-theme select:active {
-    background-image: url("icons/light-theme/button-down-active.svg");
+    background-image: url("icons98/light-theme/button-down-active.svg");
 }
 body.light-theme ::-webkit-scrollbar-track {
-    background-image: url("icons/light-theme/scrollbar-background.svg");
+    background-image: url("icons98/light-theme/scrollbar-background.svg");
 }
 body.light-theme ::-webkit-scrollbar-button:vertical:start {
-    background-image: url("icons/light-theme/button-up.svg");
+    background-image: url("icons98/light-theme/button-up.svg");
 }
 body.light-theme ::-webkit-scrollbar-button:vertical:end {
-    background-image: url("icons/light-theme/button-down.svg");
+    background-image: url("icons98/light-theme/button-down.svg");
 }
 body.light-theme ::-webkit-scrollbar-button:horizontal:start {
-    background-image: url("icons/light-theme/button-left.svg");
+    background-image: url("icons98/light-theme/button-left.svg");
 }
 body.light-theme ::-webkit-scrollbar-button:horizontal:end {
-    background-image: url("icons/light-theme/button-right.svg");
+    background-image: url("icons98/light-theme/button-right.svg");
 }
 body.light-theme .sunken-panel {
-    border-image: url("icons/light-theme/sunken-panel-border.svg") 2;
+    border-image: url("icons98/light-theme/sunken-panel-border.svg") 2;
 }
