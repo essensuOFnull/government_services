@@ -69,8 +69,8 @@ body.dark-theme {
 }
 
 /*иконки*/
-body.light-theme .title-bar-controls button[aria-label="Download"],
-body.light-theme .title-bar-controls button[aria-label].download {
+body.dark-theme .title-bar-controls button[aria-label="Download"],
+body.dark-theme .title-bar-controls button[aria-label].download {
     background-image: url("icons98/dark-theme/download.png");
 }
 body.dark-theme .title-bar-controls button[aria-label="Minimize"],
