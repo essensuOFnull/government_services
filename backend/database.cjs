@@ -179,11 +179,31 @@ MessageRead.init({
   tableName: 'message_reads'
 });
 
+class CrossoutResourcePrice extends Model {}
+CrossoutResourcePrice.init({
+  id: { type: DataTypes.STRING, primaryKey: true },
+  user_id: { 
+    type: DataTypes.STRING, 
+    references: { model: 'users', key: 'id' } 
+  },
+  resource_index: { type: DataTypes.INTEGER, allowNull: false }, // Индекс ресурса (0-5)
+  value: { type: DataTypes.FLOAT, allowNull: false }, // Новое значение (цена за пакет или размер пакета)
+  field_type: { type: DataTypes.STRING, allowNull: false }, // 'price' или 'pack_size'
+  changed_at: { type: DataTypes.BIGINT, allowNull: false } // Время изменения
+}, { 
+  sequelize, 
+  modelName: 'CrossoutResourcePrice',
+  tableName: 'crossout_resource_prices'
+});
+
 // Связи
 User.hasMany(File, { foreignKey: 'uploader_id', as: 'uploadedFiles' });
 User.hasMany(File, { foreignKey: 'owner_id', as: 'ownedFiles' });
 User.hasMany(Message, { foreignKey: 'sender_id', as: 'sentMessages' });
+User.hasMany(CrossoutResourcePrice, { foreignKey: 'user_id', as: 'crossoutPrices' });
 User.hasOne(UserStorageQuota, { foreignKey: 'user_id', as: 'quota' });
+
+CrossoutResourcePrice.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
 Conversation.belongsToMany(User, { 
   through: ConversationParticipant, 
@@ -230,7 +250,11 @@ async function decompressContent(compressedBuffer) {
 async function initializeDatabase() {
   try {
     // Вместо alter: true, используем force: false для создания таблиц
-    await sequelize.sync({ force: false });
+    await sequelize.sync({ force: false, alter: false });
+    
+    // Явно синхронизируем CrossoutResourcePrice, чтобы убедиться, что таблица существует
+    await CrossoutResourcePrice.sync({ alter: false });
+    
     console.log('Database synchronized successfully');
   } catch (error) {
     console.error('Database synchronization error:', error);
@@ -253,5 +277,6 @@ module.exports = {
   FileReference,
   UserStorageQuota,
   MessageRead,
+  CrossoutResourcePrice,
   Op
 };

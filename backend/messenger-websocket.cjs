@@ -10,7 +10,8 @@ const {
   sequelize,
   Op,
   compressContent,
-  decompressContent
+  decompressContent,
+  CrossoutResourcePrice
 } = require('./database.cjs');
 
 // Хранилище активных соединений пользователей
@@ -127,6 +128,10 @@ class MessengerWebSocketServer {
 
       case 'get_user_status':
         await this.handleGetUserStatus(userId, data, ws);
+        break;
+
+      case 'crossout_price_update':
+        await this.handleCrossoutPriceUpdate(userId, data);
         break;
 
       case 'ping':
@@ -389,6 +394,41 @@ class MessengerWebSocketServer {
     }));
   }
 
+  async handleCrossoutPriceUpdate(userId, data) {
+    const { resourceIndex, fieldType, value } = data;
+
+    try {
+      const user = await User.findByPk(userId);
+      if (!user) return;
+
+      // Сохраняем в БД
+      await CrossoutResourcePrice.create({
+        id: require('uuid').v4(),
+        user_id: userId,
+        resource_index: resourceIndex,
+        field_type: fieldType,
+        value: parseFloat(value),
+        changed_at: Date.now()
+      });
+
+      // Broadcast to all connected users
+      this.broadcastToAllConnected({
+        type: 'crossout_price_updated',
+        resourceIndex,
+        fieldType,
+        value: parseFloat(value),
+        userId,
+        username: user.username,
+        changedAt: Date.now()
+      });
+
+      console.log(`✅ Crossout price updated: resource=${resourceIndex}, field=${fieldType}, value=${value}, user=${user.username}`);
+
+    } catch (error) {
+      console.error('Error handling crossout price update:', error);
+    }
+  }
+
   formatTimeAgo(ms) {
     const seconds = Math.floor(ms / 1000);
     const minutes = Math.floor(seconds / 60);
@@ -436,6 +476,18 @@ class MessengerWebSocketServer {
 
     if (connections) {
       const messageData = JSON.stringify(message);
+      for (const ws of connections) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(messageData);
+        }
+      }
+    }
+  }
+
+  // Отправка сообщения всем подключенным пользователям
+  broadcastToAllConnected(message) {
+    const messageData = JSON.stringify(message);
+    for (const [userId, connections] of userConnections) {
       for (const ws of connections) {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(messageData);

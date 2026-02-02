@@ -16,6 +16,7 @@ const {
   ConversationParticipant,
   UserStorageQuota,
   FileReference,
+  CrossoutResourcePrice,
   initializeDatabase,
   sequelize,
   Op,
@@ -1135,6 +1136,216 @@ router.get('/avatar/:userId', async (req, res) => {
     stream.pipe(res);
   } catch (error) {
     console.error('Avatar get error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+});
+
+// Save Crossout Resource Price
+router.post('/crossout/save-price', authenticateUser, async (req, res) => {
+  try {
+    const { resourceIndex, fieldType, value } = req.body;
+    const userId = req.user.id;
+
+    if (typeof resourceIndex !== 'number' || resourceIndex < 0 || resourceIndex > 5) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Неверный индекс ресурса' 
+      });
+    }
+
+    if (!['price', 'pack_size'].includes(fieldType)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Неверный тип поля' 
+      });
+    }
+
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Неверное значение' 
+      });
+    }
+
+    // Создаем запись в БД
+    const record = await CrossoutResourcePrice.create({
+      id: uuid(),
+      user_id: userId,
+      resource_index: resourceIndex,
+      field_type: fieldType,
+      value: numValue,
+      changed_at: Date.now()
+    });
+
+    res.json({ 
+      success: true, 
+      data: record.toJSON()
+    });
+  } catch (error) {
+    console.error('Error saving crossout price:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+});
+
+// Get Crossout Resource Prices History
+router.get('/crossout/prices-history', authenticateUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const resourceIndex = req.query.resourceIndex ? parseInt(req.query.resourceIndex) : null;
+    const fieldType = req.query.fieldType || null;
+
+    const whereClause = { user_id: userId };
+    if (resourceIndex !== null) {
+      whereClause.resource_index = resourceIndex;
+    }
+    if (fieldType) {
+      whereClause.field_type = fieldType;
+    }
+
+    const records = await CrossoutResourcePrice.findAll({
+      where: whereClause,
+      order: [['changed_at', 'DESC']],
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id', 'username'],
+        required: false
+      }]
+    });
+
+    res.json({ 
+      success: true, 
+      data: records 
+    });
+  } catch (error) {
+    console.error('Error fetching crossout prices history:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+});
+
+// Get Latest Crossout Resource Prices
+router.get('/crossout/latest-prices', async (req, res) => {
+  try {
+    const prices = [];
+
+    // Для каждого ресурса и типа поля получаем последнее изменение
+    for (let i = 0; i < 6; i++) {
+      for (const fieldType of ['price', 'pack_size']) {
+        const record = await CrossoutResourcePrice.findOne({
+          where: {
+            resource_index: i,
+            field_type: fieldType
+          },
+          order: [['changed_at', 'DESC']],
+          include: [{
+            model: User,
+            as: 'user',
+            attributes: ['id', 'username'],
+            required: false
+          }]
+        });
+
+        if (record) {
+          prices.push({
+            resourceIndex: i,
+            fieldType: fieldType,
+            value: record.value,
+            userId: record.user_id,
+            username: record.user ? record.user.username : 'Unknown',
+            changedAt: record.changed_at
+          });
+        }
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      data: prices 
+    });
+  } catch (error) {
+    console.error('Error fetching latest crossout prices:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+});
+
+// Get Latest Prices for Specific Resources
+router.post('/crossout/get-latest-prices', async (req, res) => {
+  try {
+    const { resources } = req.body;
+
+    if (!Array.isArray(resources)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'resources должен быть массивом' 
+      });
+    }
+
+    const prices = {};
+
+    for (const resource of resources) {
+      const priceRecord = await CrossoutResourcePrice.findOne({
+        where: {
+          resource_index: resource,
+          field_type: 'price'
+        },
+        order: [['changed_at', 'DESC']],
+        include: [{
+          model: User,
+          as: 'user',
+          attributes: ['id', 'username'],
+          required: false
+        }]
+      });
+
+      const packSizeRecord = await CrossoutResourcePrice.findOne({
+        where: {
+          resource_index: resource,
+          field_type: 'pack_size'
+        },
+        order: [['changed_at', 'DESC']],
+        include: [{
+          model: User,
+          as: 'user',
+          attributes: ['id', 'username'],
+          required: false
+        }]
+      });
+
+      prices[resource] = {
+        price: priceRecord ? {
+          value: priceRecord.value,
+          userId: priceRecord.user_id,
+          username: priceRecord.user ? priceRecord.user.username : 'Unknown',
+          changedAt: priceRecord.changed_at
+        } : null,
+        packSize: packSizeRecord ? {
+          value: packSizeRecord.value,
+          userId: packSizeRecord.user_id,
+          username: packSizeRecord.user ? packSizeRecord.user.username : 'Unknown',
+          changedAt: packSizeRecord.changed_at
+        } : null
+      };
+    }
+
+    res.json({ 
+      success: true, 
+      data: prices 
+    });
+  } catch (error) {
+    console.error('Error fetching specific crossout prices:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message 

@@ -1,6 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { useAuth } from '../../../hooks/useAuth';
 
 export default function DecorDisassembling() {
+	const { user } = useAuth();
+	const wsRef = useRef(null);
 	const [activeTab, setActiveTab] = useState(0);
 
 	const [rarityResources, setRarityResources] = useState([
@@ -25,6 +28,230 @@ export default function DecorDisassembling() {
 		["./crossout/batteries.png",0,10],
 		["./crossout/electronics.png",0,10]
 	]);
+
+	// Состояние для отслеживания информации об изменении
+	const [priceHistory, setPriceHistory] = useState({});
+	
+	// Для отслеживания значений перед редактированием
+	const [resourcesBeforeEdit, setResourcesBeforeEdit] = useState(null);
+
+	// Инициализация WebSocket и загрузка данных
+	useEffect(() => {
+		const initializeComponent = async () => {
+			console.log('Initializing crossout component, user:', user);
+
+			if (!user?.id) {
+				console.warn('User not authenticated yet');
+				return;
+			}
+
+			// Загружаем последние цены из базы
+			try {
+				console.log('Fetching latest prices...');
+				const response = await fetch('/api/messenger/crossout/get-latest-prices', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'x-user-id': user?.id
+					},
+					body: JSON.stringify({
+						resources: [0, 1, 2, 3, 4, 5]
+					})
+				});
+
+				console.log('Response status:', response.status);
+				
+				if (!response.ok) {
+					console.error('Response error:', response.status, response.statusText);
+					const errorText = await response.text();
+					console.error('Response body:', errorText);
+					return;
+				}
+
+				const data = await response.json();
+				console.log('Loaded prices data:', data);
+
+				if (data.success && data.data) {
+					const history = {};
+					const newResources = [...resources];
+
+					Object.entries(data.data).forEach(([resourceIndex, info]) => {
+						const idx = parseInt(resourceIndex);
+						if (info.price) {
+							newResources[idx][1] = info.price.value;
+							history[`${idx}-price`] = {
+								username: info.price.username,
+								changedAt: info.price.changedAt
+							};
+						}
+						if (info.packSize) {
+							newResources[idx][2] = info.packSize.value;
+							history[`${idx}-pack_size`] = {
+								username: info.packSize.username,
+								changedAt: info.packSize.changedAt
+							};
+						}
+					});
+
+					setResources(newResources);
+					setResourcesBeforeEdit(JSON.parse(JSON.stringify(newResources)));
+					setPriceHistory(history);
+					console.log('Resources updated');
+				}
+			} catch (error) {
+				console.error('Error loading prices:', error);
+			}
+
+			// Подключаемся к WebSocket
+			if (!wsRef.current) {
+				const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+				const wsUrl = `${protocol}//${window.location.host}/ws/messenger?userId=${user?.id}`;
+				
+				try {
+					const ws = new WebSocket(wsUrl);
+					
+					ws.onopen = () => {
+						console.log('WebSocket connected for Crossout updates');
+					};
+
+					ws.onmessage = (event) => {
+						try {
+							const message = JSON.parse(event.data);
+							if (message.type === 'crossout_price_updated') {
+								handleRemoteUpdate(message);
+							}
+						} catch (error) {
+							console.error('Error parsing WebSocket message:', error);
+						}
+					};
+
+					ws.onerror = (error) => {
+						console.error('WebSocket error:', error);
+					};
+
+					ws.onclose = () => {
+						console.log('WebSocket disconnected');
+						wsRef.current = null;
+					};
+
+					wsRef.current = ws;
+				} catch (error) {
+					console.error('Error connecting to WebSocket:', error);
+				}
+			}
+		};
+
+		if (user?.id) {
+			initializeComponent();
+		}
+
+		return () => {
+			// Не закрываем WebSocket при размонтировании, так как он может использоваться другими компонентами
+		};
+	}, [user?.id]);
+
+	// Обработчик обновлений с других пользователей
+	const handleRemoteUpdate = (message) => {
+		const { resourceIndex, fieldType, value, username, changedAt } = message;
+
+		setResources(prev => {
+			const updated = prev.map((row, idx) => {
+				if (idx === resourceIndex) {
+					const fieldIdx = fieldType === 'price' ? 1 : 2;
+					const newRow = [...row];
+					newRow[fieldIdx] = value;
+					return newRow;
+				}
+				return row;
+			});
+			return updated;
+		});
+
+		setPriceHistory(prev => ({
+			...prev,
+			[`${resourceIndex}-${fieldType}`]: {
+				username,
+				changedAt
+			}
+		}));
+	};
+
+	// Функция для отправки обновлений на сервер
+	const updatePrice = async (resourceIndex, fieldType, value) => {
+		try {
+			console.log('Updating price:', { resourceIndex, fieldType, value, userId: user?.id });
+
+			// Отправляем на сервер через REST API
+			const response = await fetch('/api/messenger/crossout/save-price', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'x-user-id': user?.id
+				},
+				body: JSON.stringify({
+					resourceIndex,
+					fieldType,
+					value: parseFloat(value)
+				})
+			});
+
+			console.log('Save price response:', response.status);
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				console.error('Error saving price:', response.status, errorText);
+				return;
+			}
+
+			const data = await response.json();
+			console.log('Price saved successfully:', data);
+
+			// Отправляем обновление через WebSocket всем подключенным пользователям
+			if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+				console.log('Sending WebSocket update');
+				wsRef.current.send(JSON.stringify({
+					type: 'crossout_price_update',
+					resourceIndex,
+					fieldType,
+					value: parseFloat(value)
+				}));
+			} else {
+				console.warn('WebSocket not connected, skipping broadcast');
+			}
+		} catch (error) {
+			console.error('Error updating price:', error);
+		}
+	};
+
+	// Обработчик потери фокуса для поля ввода
+	const handleInputBlur = (resourceIndex, fieldType, currentValue) => {
+		const parsedCurrent = parseFloat(currentValue);
+		
+		// Получаем предыдущее значение из сохраненного состояния
+		const fieldIdx = fieldType === 'price' ? 1 : 2;
+		const previousValue = resourcesBeforeEdit ? resourcesBeforeEdit[resourceIndex][fieldIdx] : null;
+		const parsedPrevious = parseFloat(previousValue);
+
+		console.log('Input blur:', { resourceIndex, fieldType, parsedCurrent, parsedPrevious, previousValue });
+
+		// Сохраняем только если значение действительно изменилось
+		if (parsedCurrent !== parsedPrevious) {
+			console.log('Value changed, updating price');
+			updatePrice(resourceIndex, fieldType, parsedCurrent);
+			// Обновляем "до редактирования" значение, чтобы следующее сравнение было корректным
+			setResourcesBeforeEdit(prev => {
+				if (!prev) return null;
+				const updated = prev.map((row, idx) => 
+					idx === resourceIndex 
+						? row.map((cell, colIdx) => colIdx === fieldIdx ? parsedCurrent : cell)
+						: [...row]
+				);
+				return updated;
+			});
+		} else {
+			console.log('Value not changed, skipping update');
+		}
+	};
 
 	// Рассчитываем результаты для каждой редкости
 	const calculateResults = useMemo(() => {
@@ -53,6 +280,13 @@ export default function DecorDisassembling() {
 			};
 		});
 	}, [rarityResources, resources]);
+
+	// Форматирование времени
+	const formatTime = (timestamp) => {
+		if (!timestamp) return '-';
+		const date = new Date(timestamp);
+		return date.toLocaleString('ru-RU');
+	};
 
 	return(
 		<>
@@ -84,19 +318,32 @@ export default function DecorDisassembling() {
 						}}>
 							<thead>
 								<tr>
-									<th colSpan={3} style={{whiteSpace: 'normal'}}>
+									<th colSpan={5} style={{whiteSpace: 'normal'}}>
 										Введите за сколько вы будете продавать каждый из данных видов ресурсов <b style={{textDecoration:'underline'}}>БЕЗ</b> учёта комиссии
 									</th>
 								</tr>
 								<tr>
-									<th style={{width: '120px'}}>Монет за</th>
-									<th style={{width: '140px'}}>Количество единиц</th>
-									<th style={{width: '100px'}}>Ресурса</th>
+									<th>Дата изменения</th>
+									<th>Кем изменено</th>
+									<th>Монет за</th>
+									<th>Количество единиц</th>
+									<th>Ресурса</th>
 								</tr>
 							</thead>
 							<tbody>
-								{resources.map((resource,y)=>(
+								{resources.map((resource,y)=>{
+									const priceInfo = priceHistory[`${y}-price`];
+									const packSizeInfo = priceHistory[`${y}-pack_size`];
+									const latestChangeInfo = priceInfo || packSizeInfo;
+
+									return (
 									<tr key={`y:${y}`}>
+										<td className="field-border-disabled" style={{fontSize: '12px'}}>
+											{latestChangeInfo ? formatTime(latestChangeInfo.changedAt) : '-'}
+										</td>
+										<td className="field-border-disabled" style={{fontSize: '12px'}}>
+											{latestChangeInfo ? latestChangeInfo.username : '-'}
+										</td>
 										<td>
 											<input 
 												type='number' 
@@ -113,6 +360,10 @@ export default function DecorDisassembling() {
 																: [...row]
 														)
 													);
+												}}
+												onBlur={(e) => {
+													const currentValue = e.target.value;
+												handleInputBlur(y, 'price', currentValue);
 												}}
 											/>
 										</td>
@@ -132,13 +383,18 @@ export default function DecorDisassembling() {
 														)
 													);
 												}}
+												onBlur={(e) => {
+													const currentValue = e.target.value;
+												handleInputBlur(y, 'pack_size', currentValue);
+												}}
 											/>
 										</td>
 										<td>
 											<img src={resource[0]} alt="" style={{maxWidth: '100%'}}/>
 										</td>
 									</tr>
-								))}
+									);
+								})}
 							</tbody>
 						</table>
 					</div>
@@ -234,12 +490,12 @@ export default function DecorDisassembling() {
 							<tbody>
 								{rarityLabels.map((rarity,y)=>(
 									<tr key={`result-${y}`}>
-										<td style={{
+										<th style={{
 											background: rarity[1],
 											fontWeight: 'bold'
 										}}>
 											{rarity[0]}
-										</td>
+										</th>
 										<td>
 											{calculateResults[y]?.grossValue || '0.00'} монет
 										</td>
