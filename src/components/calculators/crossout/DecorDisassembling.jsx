@@ -181,6 +181,16 @@ export default function DecorDisassembling() {
 		try {
 			console.log('Updating price:', { resourceIndex, fieldType, value, userId: user?.id });
 
+			// Оптимистичное обновление UI сразу
+			const changedAt = Date.now();
+			setPriceHistory(prev => ({
+				...prev,
+				[`${resourceIndex}-${fieldType}`]: {
+					username: user?.username || user?.id,
+					changedAt
+				}
+			}));
+
 			// Отправляем на сервер через REST API
 			const response = await fetch('/api/messenger/crossout/save-price', {
 				method: 'POST',
@@ -206,18 +216,14 @@ export default function DecorDisassembling() {
 			const data = await response.json();
 			console.log('Price saved successfully:', data);
 
-			// Отправляем обновление через WebSocket всем подключенным пользователям
-			if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-				console.log('Sending WebSocket update');
-				wsRef.current.send(JSON.stringify({
-					type: 'crossout_price_update',
-					resourceIndex,
-					fieldType,
-					value: parseFloat(value)
-				}));
-			} else {
-				console.warn('WebSocket not connected, skipping broadcast');
-			}
+			// Обновляем с реальным временем с сервера
+			setPriceHistory(prev => ({
+				...prev,
+				[`${resourceIndex}-${fieldType}`]: {
+					username: user?.username || user?.id,
+					changedAt: data.data?.changed_at || changedAt
+				}
+			}));
 		} catch (error) {
 			console.error('Error updating price:', error);
 		}

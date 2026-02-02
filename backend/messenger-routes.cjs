@@ -1148,6 +1148,7 @@ router.post('/crossout/save-price', authenticateUser, async (req, res) => {
   try {
     const { resourceIndex, fieldType, value } = req.body;
     const userId = req.user.id;
+    const username = req.user.username;
 
     if (typeof resourceIndex !== 'number' || resourceIndex < 0 || resourceIndex > 5) {
       return res.status(400).json({ 
@@ -1180,6 +1181,20 @@ router.post('/crossout/save-price', authenticateUser, async (req, res) => {
       value: numValue,
       changed_at: Date.now()
     });
+
+    // Отправляем обновление через WebSocket всем подключенным пользователям
+    const wsServer = req.app.get('wsServer');
+    if (wsServer) {
+      wsServer.broadcastCrossoutUpdate({
+        resourceIndex,
+        fieldType,
+        value: numValue,
+        username,
+        changedAt: record.changed_at
+      });
+    } else {
+      console.warn('WebSocket server not available');
+    }
 
     res.json({ 
       success: true, 

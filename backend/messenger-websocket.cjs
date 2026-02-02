@@ -514,6 +514,24 @@ class MessengerWebSocketServer {
     }
   }
 
+  // Отправить обновление Crossout цены всем подключенным пользователям
+  broadcastCrossoutUpdate(data) {
+    const connections = this.wss.clients;
+
+    const message = JSON.stringify({
+      type: 'crossout_price_updated',
+      ...data
+    });
+
+    console.log('Broadcasting crossout update to', connections.size, 'clients:', message);
+
+    for (const ws of connections) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(message);
+      }
+    }
+  }
+
   // Получение информации о пользователях в разговоре
   async getConversationUsersStatus(conversationId) {
     try {
