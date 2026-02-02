@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import ReactDOMServer from 'react-dom/server';
+import { useTheme } from '../contexts/ThemeContext';
 
 export default function Window(props) {
 	const {
@@ -20,6 +22,7 @@ export default function Window(props) {
 		showControls = true,
 	} = props;
 
+	const { theme } = useTheme();
 	const windowRef = useRef(null);
 	const titleBarRef = useRef(null);
 	const tabListRef = useRef(null);
@@ -132,7 +135,6 @@ export default function Window(props) {
 		setOriginalSize(initialOriginalSize || { width, height });
 		setOriginalPosition(initialOriginalPosition || initialPosition);
 	}, [initialMaximized, initialPosition, width, height, initialOriginalSize, initialOriginalPosition]);
-
 	// Обработчики перетаскивания
 	const handleMouseDown = (e) => {
 		if (e.target.closest('.title-bar-controls')) return;
@@ -322,6 +324,102 @@ export default function Window(props) {
 		backgroundColor: 'transparent'
 	};
 
+	//обрабочик скачивания
+	const handleDownload = async () => {
+		// Получаем DOM-элемент содержимого окна
+		const windowBodyElement = windowRef.current?.querySelector('.window-body');
+		if (!windowBodyElement) return;
+		
+		// Клонируем элемент для безопасного использования
+		const clonedBody = windowBodyElement.cloneNode(true);
+		
+		// Убираем обработчики событий из клонированного элемента
+		clonedBody.querySelectorAll('[onclick]').forEach(el => el.removeAttribute('onclick'));
+		
+		// Получаем чистый HTML содержимого
+		const contentMarkup = clonedBody.innerHTML;
+
+		try {
+			// Загружаем CSS файлы
+			const commonCss = await fetch('/styles/98/common.css').then(r => r.text());
+			const themeFile = theme === 'dark' ? 'dark-theme.css' : 'light-theme.css';
+			const themeCss = await fetch(`/styles/98/${themeFile}`).then(r => r.text());
+
+			// Создаем полный HTML документ
+			const htmlContent = `<!DOCTYPE html>
+	<html lang="ru">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>${title} - Экспорт</title>
+		<style>
+			${commonCss}
+		</style>
+		<style>
+			${themeCss}
+		</style>
+	</head>
+	<body>
+		<div class="window-body">
+			${contentMarkup}
+		</div>
+		
+		<script>
+			// Базовая JavaScript логика для работы вкладок
+			document.addEventListener('DOMContentLoaded', function() {
+				const tabLists = document.querySelectorAll('[role="tablist"]');
+				
+				tabLists.forEach((tabList) => {
+					const tabs = tabList.querySelectorAll('[role="tab"]');
+					const tabPanels = document.querySelectorAll('[role="tabpanel"]');
+					
+					if (tabs.length > 0) {
+						// Показываем только активную вкладку
+						tabs.forEach((tab, index) => {
+							if (tab.getAttribute('aria-selected') === 'true') {
+								tabPanels[index]?.style.display = 'block';
+							} else {
+								tabPanels[index]?.style.display = 'none';
+							}
+						});
+						
+						// Добавляем обработчики для переключения вкладок
+						tabs.forEach((tab, index) => {
+							tab.addEventListener('click', function(e) {
+								e.preventDefault();
+								
+								// Обновляем атрибут aria-selected
+								tabs.forEach(t => t.setAttribute('aria-selected', 'false'));
+								this.setAttribute('aria-selected', 'true');
+								
+								// Показываем соответствующую панель
+								tabPanels.forEach((panel, panelIndex) => {
+									panel.style.display = panelIndex === index ? 'block' : 'none';
+								});
+							});
+						});
+					}
+				});
+			});
+		</script>
+	</body>
+	</html>`;
+
+			// Создаем и скачиваем файл
+			const blob = new Blob([htmlContent], { type: 'text/html' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `${title.toLowerCase().replace(/[^\wа-яА-Я]+/g, '_')}_content.html`;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+		} catch (error) {
+			console.error('Ошибка при загрузке CSS файлов:', error);
+		}
+	};
+
 	return (
 		<div 
 			ref={windowRef}
@@ -349,7 +447,7 @@ export default function Window(props) {
 				<div className="title-bar-text">{title}</div>
 				{showControls && (
 					<div className="title-bar-controls">
-						<button aria-label="Download" onClick={()=>{}}></button>
+						<button aria-label="Download" onClick={handleDownload}></button>
 						<button aria-label="Minimize" onClick={handleMinimize}></button>
 						<button 
 							aria-label={isMaximized ? "Restore" : "Maximize"} 

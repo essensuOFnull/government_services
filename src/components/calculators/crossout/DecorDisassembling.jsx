@@ -270,13 +270,11 @@ export default function DecorDisassembling() {
 						</ul>
 						<p style={{
 							marginTop: '15px',
-							fontStyle: 'italic',
 							textAlign: 'center',
 							background: '#fff3cd56',
 							padding: '10px',
 							borderRadius: '5px'
-						}}>
-							Подбредье на вашей стороне, удачного фарма 😎
+						}}><span style={{fontStyle: 'italic',}}>Подбредье на вашей стороне, удачного фарма </span>😎
 						</p>
 					</div>
 				</div>

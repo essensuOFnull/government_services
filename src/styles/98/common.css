@@ -971,15 +971,25 @@ table {
     background-color: var(--button-highlight);
 }
 
-table > thead > tr > * {
+table > * > tr > *{
     position: sticky;
     top: 0;
     height: 17px;
     box-shadow: var(--border-raised-outer), var(--border-raised-inner);
-    background: var(--surface);
     box-sizing: border-box;
     font-weight: normal;
     padding: 0 var(--grouped-element-spacing);
+}
+table > thead > tr > *{
+    background: var(--surface);
+}
+table * tr * input{
+    min-width:100%;
+    min-height:calc(100% - var(--grouped-element-spacing));
+    border:none;
+    box-shadow:none;
+    margin:0;
+    padding:0;
 }
 
 table.interactive > tbody > tr {
