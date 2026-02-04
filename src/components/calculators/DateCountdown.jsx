@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useTheme } from '../../contexts/ThemeContext';
 import './DateCountdown.css';
 
 const DateCountdown = () => {
@@ -7,6 +8,7 @@ const DateCountdown = () => {
   const [displayDate, setDisplayDate] = useState('');
   const [copyMessage, setCopyMessage] = useState('');
   const animationFrameId = useRef(null);
+  const { theme } = useTheme();
 
   // Инициализация начальной даты (1 июня текущего года)
   useEffect(() => {
@@ -67,7 +69,7 @@ const DateCountdown = () => {
   };
 
   // Отрисовка таймера на canvas
-  const drawTimer = (ctx, time, canvas) => {
+  const drawTimer = (ctx, time, canvas, colors) => {
     const rings={
         day: {s: 864e5, max: 365},
         hour: {s: 36e5, max: 24},
@@ -118,21 +120,21 @@ const DateCountdown = () => {
       );
 
       // Background circle
-      ctx.strokeStyle = 'rgba(200, 200, 200, 0.4)';
+      ctx.strokeStyle = colors.bgCircle;
       ctx.beginPath();
       ctx.arc(0, 0, currentRingSize / 2, 0, 2 * Math.PI);
       ctx.lineWidth = r_thickness;
       ctx.stroke();
 
       // Progress circle
-      ctx.strokeStyle = 'rgb(100, 150, 255)';
+      ctx.strokeStyle = colors.progress;
       ctx.beginPath();
       ctx.arc(0, 0, currentRingSize / 2, 1.5 * Math.PI, angle, 1);
       ctx.lineWidth = r_thickness;
       ctx.stroke();
 
       // Unit name
-      ctx.fillStyle = '#333';
+      ctx.fillStyle = colors.text;
       ctx.font = 'bold 20px Arial, sans-serif';
       ctx.textAlign = 'center';
       const unitName = getAffixWord(Math.floor(displayValue), unit).toUpperCase();
@@ -170,6 +172,16 @@ const DateCountdown = () => {
     const scaledWidth = ((r_size + r_thickness) * (r_count - 1) + r_spacing * (r_count - 2)) * scale;
     const scaledHeight = newHeight;
 
+    // Функция для получения текущих цветов из CSS переменных
+    const getColors = () => {
+      const bodyStyle = getComputedStyle(document.body);
+      return {
+        bgCircle: bodyStyle.getPropertyValue('--button-shadow').trim(),
+        progress: bodyStyle.getPropertyValue('--accent-color').trim(),
+        text: bodyStyle.getPropertyValue('--text-color').trim()
+      };
+    };
+
     const animate = () => {
       const now = new Date().getTime();
       const time = countdownToTime - now; // Вычисляем время до даты (может быть отрицательным если дата прошла)
@@ -181,8 +193,11 @@ const DateCountdown = () => {
       ctx.save();
       ctx.scale(scale, scale);
 
+      // Получаем актуальные цвета перед отрисовкой
+      const colors = getColors();
+
       // Отрисовываем таймер (может быть отрицательным если дата прошла)
-      drawTimer(ctx, time, canvas);
+      drawTimer(ctx, time, canvas, colors);
 
       ctx.restore();
 
@@ -199,7 +214,7 @@ const DateCountdown = () => {
         cancelAnimationFrame(animationFrameId.current);
       }
     };
-  }, [targetDate]);
+  }, [targetDate, theme]);
 
   // Обработка изменения даты
   const handleDateChange = (e) => {

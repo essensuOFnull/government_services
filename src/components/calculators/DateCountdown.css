@@ -43,9 +43,6 @@
 
 .date-picker {
   padding: 8px 12px;
-  background: #fff;
-  color: #333;
-  border: 1px solid #ccc;
   border-radius: 4px;
   font-size: 14px;
   font-family: inherit;
@@ -53,27 +50,4 @@
 
 .date-picker:focus {
   outline: none;
-  border-color: #999;
-  box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
-}
-
-.copy-button {
-  padding: 8px 16px;
-  background: #007bff;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-weight: 600;
-  font-size: 14px;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.copy-button:hover {
-  background-color: #0056b3;
-}
-
-.copy-button:active {
-  background-color: #004085;
 }

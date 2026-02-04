@@ -14,7 +14,7 @@ export const ThemeProvider = ({ children }) => {
     });
 
     useEffect(() => {
-        // Динамически загружаем CSS файл темы
+        // Динамически загружаем CSS файл темы с кэш-busterом
         const loadThemeCSS = (themeName) => {
             // Удаляем старый link если есть
             const oldLink = document.getElementById('theme-styles');
@@ -22,25 +22,21 @@ export const ThemeProvider = ({ children }) => {
                 oldLink.remove();
             }
 
-            if (themeName === 'dark') {
-                const link = document.createElement('link');
-                link.id = 'theme-styles';
-                link.rel = 'stylesheet';
-                link.href = '/styles/98/dark-theme.css';
-                document.head.appendChild(link);
-                
-                document.body.classList.add('dark-theme');
-                document.body.classList.remove('light-theme');
-            } else {
-                const link = document.createElement('link');
-                link.id = 'theme-styles';
-                link.rel = 'stylesheet';
-                link.href = '/styles/98/light-theme.css';
-                document.head.appendChild(link);
-                
-                document.body.classList.add('light-theme');
-                document.body.classList.remove('dark-theme');
-            }
+            const timestamp = new Date().getTime();
+            const themeFile = themeName === 'dark' ? 'dark-theme.css' : 'light-theme.css';
+            
+            const link = document.createElement('link');
+            link.id = 'theme-styles';
+            link.rel = 'stylesheet';
+            link.href = `/styles/98/${themeFile}?v=${timestamp}`;
+            document.head.appendChild(link);
+            
+            // Обновляем классы на body
+            document.body.classList.remove('dark-theme', 'light-theme');
+            document.body.classList.add(themeName === 'dark' ? 'dark-theme' : 'light-theme');
+            
+            // Добавляем атрибут data для дополнительного контроля
+            document.documentElement.setAttribute('data-theme', themeName);
         };
 
         loadThemeCSS(theme);

@@ -49,6 +49,8 @@
 
     /* Borders */
     --border-width: 1px;
+
+    --accent-color:#f0f;
 }
 
 body {
