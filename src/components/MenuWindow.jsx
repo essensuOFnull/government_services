@@ -3,6 +3,7 @@ import Messenger from './Messenger';
 import { useWindowsManager } from '../hooks/useWindowsManager';
 import { useAuth } from '../hooks/useAuth';
 import DecorDisassembling from './calculators/crossout/DecorDisassembling';
+import DateCountdown from './calculators/DateCountdown.jsx';
 
 export default function MenuWindow({ userId }) {
 	const [activeTab, setActiveTab] = useState(0);
@@ -272,6 +273,18 @@ export default function MenuWindow({ userId }) {
 															</li>
 														</ul>
 													</details>
+												</li>
+											</ul>
+										</details>
+									</li>
+									<li>
+										<details>
+											<summary>Даты</summary>
+											<ul>
+												<li>
+													<button onClick={()=>
+														openWindow({ title: 'Обратный отсчёт до даты', children: <DateCountdown/> })
+													}>Обратный отсчёт до даты</button>
 												</li>
 											</ul>
 										</details>
