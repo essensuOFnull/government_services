@@ -583,50 +583,65 @@ router.delete('/delete-file/:fileId', authenticateUser, async (req, res) => {
   }
 });
 
-// Удаление сообщения
+// Удаление сообщения (физическое)
 router.delete('/delete-message/:messageId', authenticateUser, async (req, res) => {
   try {
     const { messageId } = req.params;
     const message = await Message.findByPk(messageId);
-    if (!message) return res.status(404).json({ success: false, message: 'Сообщение не найдено' });
+    if (!message) {
+      return res.status(404).json({ success: false, message: 'Сообщение не найдено' });
+    }
 
     // Разрешено удалять только отправителю
     if (message.sender_id !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Только отправитель может удалить сообщение' });
     }
 
+    const conversationId = message.conversation_id;
     const fileIds = message.file_ids ? JSON.parse(message.file_ids) : [];
 
+    // Обработка файлов, связанных с сообщением
     for (const fid of fileIds) {
-      // Узнаём текущее число ссылок
+      // Узнаём текущее число ссылок на файл (через FileReference)
       const refCount = await FileReference.count({ where: { file_id: fid } });
 
       if (refCount <= 1) {
-        // никто больше не ссылается — удаляем файл полностью
+        // Никто больше не ссылается — удаляем файл полностью
         const file = await File.findByPk(fid);
         if (file) {
           try {
             await s3Service.deleteFile(file.s3_key);
-          } catch (e) { console.error('Ошибка удаления s3 файла:', e); }
+          } catch (e) {
+            console.error('Ошибка удаления s3 файла:', e);
+          }
           await file.destroy();
-          // вычитаем размер из квоты текущего владельца
-          try { await storageManager.removeFileFromQuota(file.owner_id, file.size || 0); } catch (e) { console.error('quota adjust error', e); }
+          // Вычитаем размер из квоты текущего владельца (отправителя)
+          try {
+            await storageManager.removeFileFromQuota(file.owner_id, file.size || 0);
+          } catch (e) {
+            console.error('quota adjust error', e);
+          }
         }
       } else {
-        // есть другие ссылки — передаём владение первому другому ссылочнику
+        // Есть другие ссылки — передаём владение первому другому ссылочнику
         const otherRef = await FileReference.findOne({
           where: { file_id: fid, message_id: { [Op.ne]: messageId } }
         });
         if (otherRef) {
-          const msg = await Message.findByPk(otherRef.message_id);
-          if (msg) {
+          const otherMessage = await Message.findByPk(otherRef.message_id);
+          if (otherMessage) {
             const file = await File.findByPk(fid);
             const oldOwner = file ? file.owner_id : null;
-            await file.update({ owner_id: msg.sender_id });
+            // Передаём владение владельцу другого сообщения
+            await file.update({ owner_id: otherMessage.sender_id });
+            // Обновляем квоты
             try {
               if (oldOwner) await storageManager.removeFileFromQuota(oldOwner, file.size || 0);
-              await storageManager.addFileToQuota(msg.sender_id, file.size || 0);
-            } catch (e) { console.error('quota transfer error', e); }
+              await storageManager.addFileToQuota(otherMessage.sender_id, file.size || 0);
+            } catch (e) {
+              console.error('quota transfer error', e);
+              // Не прерываем удаление, если квота превышена — просто логируем
+            }
           }
         }
       }
@@ -635,10 +650,34 @@ router.delete('/delete-message/:messageId', authenticateUser, async (req, res) =
       await FileReference.destroy({ where: { file_id: fid, message_id: messageId } });
     }
 
-    // Удаляем само сообщение (логическое удаление)
-    await message.update({ deleted_at: Date.now() });
+    // Удаляем само сообщение (физически)
+    await message.destroy();
 
-    res.json({ success: true, message: 'Сообщение удалено', storageInfo: await storageManager.getStorageInfo(req.user.id) });
+    // Если удалённое сообщение было последним в разговоре, обновляем last_message_at
+    const lastMessage = await Message.findOne({
+      where: { conversation_id: conversationId },
+      order: [['created_at', 'DESC']]
+    });
+    await Conversation.update(
+      { last_message_at: lastMessage ? lastMessage.created_at : null },
+      { where: { id: conversationId } }
+    );
+
+    // Отправляем уведомление через WebSocket всем участникам разговора
+    const wsServer = req.app.get('wsServer');
+    if (wsServer) {
+      wsServer.broadcastToConversation(conversationId, {
+        type: 'message_deleted',
+        messageId: messageId,
+        conversationId: conversationId
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Сообщение удалено',
+      storageInfo: await storageManager.getStorageInfo(req.user.id)
+    });
   } catch (err) {
     console.error('delete-message error', err);
     res.status(500).json({ success: false, message: err.message });

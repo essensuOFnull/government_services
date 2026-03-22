@@ -137,7 +137,9 @@ class MessengerWebSocketServer {
       case 'ping':
         ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
         break;
-
+      case 'message_deleted':
+        // Игнорируем, т.к. это уведомление от сервера
+        break;
       default:
         console.warn(`Unknown message type: ${type}`);
     }

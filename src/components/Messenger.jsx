@@ -248,6 +248,13 @@ export function Messenger({ userId }) {
           m.id === data.messageId ? { ...m, readBy: [...(m.readBy || []), data.userId] } : m
         ));
         break;
+      case 'message_deleted':
+        console.log('message_deleted received:', data);
+        // Удаляем сообщение из текущего чата, если оно относится к нему
+        if (currentConversationRef.current && data.conversationId === currentConversationRef.current.id) {
+          setMessages(prev => prev.filter(m => m.id !== data.messageId));
+        }
+        break;
 
       default:
         console.log('Неизвестный тип сообщения:', type);
