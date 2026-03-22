@@ -71,7 +71,10 @@ export default function ForwardButton({ msg, wsRef }) {
         <div 
           className="forward-popup" 
           style={{ 
-            position: 'absolute', 
+            position: 'absolute',
+            left:'50%',
+            top:'50%',
+            transform:'translate(-50%, -50%)',
             background: '#fff', 
             border: '1px solid #ccc', 
             zIndex: 10, 

@@ -25,6 +25,12 @@ export function Messenger({ userId }) {
   const [showUserSearch, setShowUserSearch] = useState(false);
   const typingTimeoutRef = useRef(null);
 
+  const currentConversationRef = useRef(currentConversation);
+
+  useEffect(() => {
+    currentConversationRef.current = currentConversation;
+  }, [currentConversation]);
+
   // Новые состояния для счётчика непрочитанных
   const [unreadCounts, setUnreadCounts] = useState({});
 
@@ -118,7 +124,8 @@ export function Messenger({ userId }) {
     switch (type) {
       case 'forward_message':
         console.log('forward_message received:', data.message);
-        if (currentConversation && currentConversation.id === data.message?.conversation_id) {
+        // Добавляем сообщение только если это текущий чат
+        if (currentConversationRef.current && currentConversationRef.current.id === data.message?.conversation_id) {
           setMessages(prev => [...prev, data.message]);
           if (data.message.file_ids && data.message.file_ids.length > 0) {
             const fileIdsToFetch = new Set();
@@ -142,6 +149,13 @@ export function Messenger({ userId }) {
             }
           }
         }
+        // Сохраняем отправителя в users Map, чтобы аватарка отображалась
+        if (data.message && data.message.sender_id && data.message.sender_username) {
+          setUsers(prev => new Map(prev).set(data.message.sender_id, {
+            id: data.message.sender_id,
+            username: data.message.sender_username
+          }));
+        }
         // Уведомление о пересланном сообщении, если не от текущего пользователя и чат не активен
         if (data.message && data.message.sender_id !== userId) {
           const conversationId = data.message.conversation_id;
@@ -157,7 +171,17 @@ export function Messenger({ userId }) {
 
       case 'new_message':
         console.log('new_message received:', data.message);
-        setMessages(prev => [...prev, data.message]);
+        // Добавляем сообщение только если это текущий чат
+        if (currentConversationRef.current && currentConversationRef.current.id === data.message?.conversation_id) {
+          setMessages(prev => [...prev, data.message]);
+        }
+        // Сохраняем отправителя в users Map
+        if (data.message && data.message.sender_id && data.message.sender_username) {
+          setUsers(prev => new Map(prev).set(data.message.sender_id, {
+            id: data.message.sender_id,
+            username: data.message.sender_username
+          }));
+        }
         // Уведомление о новом сообщении
         if (data.message && data.message.sender_id !== userId) {
           const conversationId = data.message.conversation_id;
@@ -171,6 +195,7 @@ export function Messenger({ userId }) {
         }
         break;
 
+      // остальные case без изменений
       case 'user_typing':
         setTypingUsers(prev => new Set([...prev, data.userId]));
         if (data.username && data.userId) {
