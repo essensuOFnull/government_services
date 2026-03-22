@@ -58,15 +58,14 @@ export default function ForwardButton({ msg, wsRef }) {
   };
 
   return (
-    <span style={{ marginLeft: 8, position: 'relative' }}>
+    <>
       <button 
         onClick={() => { 
           setShow(s => !s); 
           if (!show) fetchConversations(); 
         }} 
         title="Переслать"
-      >
-        Переслать
+      >Переслать
       </button>
       {show && (
         <div 
@@ -129,6 +128,6 @@ export default function ForwardButton({ msg, wsRef }) {
           </button>
         </div>
       )}
-    </span>
+    </>
   );
 }
