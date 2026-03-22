@@ -73,6 +73,7 @@ body {
     align-items: center;
     gap: var(--element-spacing);
     padding: var(--element-spacing);
+    flex-wrap:wrap;
 }
 
 .taskbar-windows {
