@@ -115,7 +115,7 @@ export default function FileItem({ fileId, fileMeta = {} }) {
       )}
       {isAudio && (
         previewUrl ? (
-          <audio src={previewUrl} controls className="file-audio" />
+          <audio src={previewUrl} controls className="file-audio"/>
         ) : (
           <div className="file-loading">Загрузка аудио...</div>
         )
