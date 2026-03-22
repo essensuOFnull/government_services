@@ -140,6 +140,8 @@ input[type="reset"] {
     min-width: 75px;
     min-height: 23px;
     padding: 0 12px;
+
+    color:var(--text-color);
 }
 
 button.default,
