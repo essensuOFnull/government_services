@@ -35,12 +35,19 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Общий лимитер
-const limiter = rateLimit({
+//лимитер
+const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100
+  max: 10, // 10 попыток за 15 минут
+  skipSuccessfulRequests: true, // не считать успешные логины
+  message: { success: false, message: 'Слишком много попыток, повторите позже' }
 });
-app.use('/api/', limiter);
+
+// Применяем лимитер только к маршрутам аутентификации
+app.use('/api/login', authLimiter);
+app.use('/api/register', authLimiter);
+app.use('/api/change-password', authLimiter);
+app.use('/api/change-username', authLimiter);
 
 // Логирование
 app.use((req, res, next) => {
