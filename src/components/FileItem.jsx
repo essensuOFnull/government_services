@@ -98,6 +98,7 @@ export default function FileItem({ fileId, fileMeta = {} }) {
 
   return (
     <div className="file-item">
+      <hr/>
       {isImage && (
         previewUrl ? (
           <img src={previewUrl} alt={filename} className="file-preview" />
@@ -136,6 +137,7 @@ export default function FileItem({ fileId, fileMeta = {} }) {
           </button>
         )}
       </div>
+      <hr/>
     </div>
   );
 }
