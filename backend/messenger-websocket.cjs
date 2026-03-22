@@ -163,7 +163,9 @@ class MessengerWebSocketServer {
         created_at: Date.now(),
         forwarded_from: originalMessageId
       });
-      
+      const originalFileIds = JSON.parse(originalMessage.file_ids || '[]');
+      await this.attachFileReferences(forwardedMessage.id, originalFileIds);
+
       await Conversation.update(
         { last_message_at: Date.now() },
         { where: { id: conversationId } }
@@ -208,6 +210,7 @@ class MessengerWebSocketServer {
         file_ids: JSON.stringify(fileIds),
         created_at: Date.now()
       });
+      await this.attachFileReferences(message.id, fileIds);
 
       const sender = await User.findByPk(userId);
       const senderUsername = sender?.username || userId;
@@ -563,6 +566,29 @@ class MessengerWebSocketServer {
     } catch (error) {
       console.error('Error getting conversation users status:', error);
       return [];
+    }
+  }
+
+  async attachFileReferences(messageId, fileIds) {
+    if (!fileIds || fileIds.length === 0) return;
+
+    const { File, FileReference } = require('./database.cjs');
+    const { v4: uuid } = require('uuid');
+
+    for (const fileId of fileIds) {
+      const file = await File.findByPk(fileId);
+      if (!file) continue;
+      if (file.deleted_at) continue; // файл уже удалён – не привязываем
+
+      // Создаём связь файла с сообщением
+      await FileReference.create({
+        id: uuid(),
+        file_id: fileId,
+        message_id: messageId
+      });
+
+      // Увеличиваем счётчик ссылок
+      await file.update({ reference_count: (file.reference_count || 0) + 1 });
     }
   }
 }

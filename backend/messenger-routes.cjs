@@ -845,7 +845,21 @@ router.post('/forward-message', authenticateUser, async (req, res) => {
       created_at: Date.now(),
       forwarded_from: messageId
     });
-
+    // Создаём ссылки на файлы
+    const fileIds = originalMessage.file_ids ? JSON.parse(originalMessage.file_ids) : [];
+    if (fileIds.length > 0) {
+      for (const fileId of fileIds) {
+        const file = await File.findByPk(fileId);
+        if (file && !file.deleted_at) {
+          await FileReference.create({
+            id: uuid(),
+            file_id: fileId,
+            message_id: newMessage.id
+          });
+          await file.update({ reference_count: (file.reference_count || 0) + 1 });
+        }
+      }
+    }
     // Обновляем последнее сообщение в разговоре
     await Conversation.update(
       { last_message_at: Date.now() },
