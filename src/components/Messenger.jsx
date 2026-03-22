@@ -23,28 +23,34 @@ export function Messenger({ userId }) {
   const [hasMore, setHasMore] = useState(true);
   const [fileMeta, setFileMeta] = useState(new Map());
   const [showUserSearch, setShowUserSearch] = useState(false);
-    // Создать чат с найденным пользователем
-    const handleUserSelected = async (user) => {
-      setShowUserSearch(false);
-      if (!user || !user.id) return;
-      try {
-        const res = await fetch('/api/messenger/conversation/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
-          body: JSON.stringify({ participantIds: [user.id] })
-        });
-        const j = await res.json();
-        if (j.success && j.conversation) {
-          const exists = conversations.some(c => c.id === j.conversation.id);
-          if (!exists) setConversations([...conversations, j.conversation]);
-          setCurrentConversation(j.conversation);
-          setOffset(0);
-          setHasMore(true);
-          setMessages([]);
-        }
-      } catch (e) { console.error(e); }
-    };
   const typingTimeoutRef = useRef(null);
+
+  // Флаг для отслеживания, был ли скролл внизу
+  const wasAtBottomRef = useRef(true);
+  // Флаг для первоначальной прокрутки в конец при смене чата
+  const initialScrollDoneRef = useRef(false);
+
+  // Создать чат с найденным пользователем
+  const handleUserSelected = async (user) => {
+    setShowUserSearch(false);
+    if (!user || !user.id) return;
+    try {
+      const res = await fetch('/api/messenger/conversation/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        body: JSON.stringify({ participantIds: [user.id] })
+      });
+      const j = await res.json();
+      if (j.success && j.conversation) {
+        const exists = conversations.some(c => c.id === j.conversation.id);
+        if (!exists) setConversations([...conversations, j.conversation]);
+        setCurrentConversation(j.conversation);
+        setOffset(0);
+        setHasMore(true);
+        setMessages([]);
+      }
+    } catch (e) { console.error(e); }
+  };
 
   // Инициализация WebSocket
   useEffect(() => {
@@ -86,10 +92,8 @@ export function Messenger({ userId }) {
 
     switch (type) {
       case 'forward_message':
-        // Исправлено: forward_message теперь содержит message, а не newMessage
         if (currentConversation && currentConversation.id === data.message?.conversation_id) {
           setMessages(prev => [...prev, data.message]);
-          // Обновляем метаданные файлов, если есть
           if (data.message.file_ids && data.message.file_ids.length > 0) {
             const fileIdsToFetch = new Set();
             data.message.file_ids.forEach(fid => { 
@@ -120,7 +124,6 @@ export function Messenger({ userId }) {
 
       case 'user_typing':
         setTypingUsers(prev => new Set([...prev, data.userId]));
-        // Add user info to users map if username is provided
         if (data.username && data.userId) {
           setUsers(prev => {
             const updated = new Map(prev);
@@ -175,7 +178,7 @@ export function Messenger({ userId }) {
       default:
         console.log('Неизвестный тип сообщения:', type);
     }
-  }, []);
+  }, [currentConversation, fileMeta, userId]);
 
   // Получение хранилища
   useEffect(() => {
@@ -192,9 +195,7 @@ export function Messenger({ userId }) {
     };
 
     fetchStorageInfo();
-    // Обновляем каждые 5 минут
     const interval = setInterval(fetchStorageInfo, 5 * 60 * 1000);
-
     return () => clearInterval(interval);
   }, [userId]);
 
@@ -215,9 +216,7 @@ export function Messenger({ userId }) {
     fetchConversations();
   }, [userId]);
 
-  // sidebar: favorites button will call openFavorites
-
-  // Создать/получить "Избранное" (чат с самим собой)
+  // Создать/получить "Избранное"
   const openFavorites = async () => {
     if (!userId) return;
     try {
@@ -228,7 +227,6 @@ export function Messenger({ userId }) {
       });
       const j = await res.json();
       if (j.success && j.conversation) {
-        // Оптимистично добавим разговор в список, если его там еще нет
         const exists = conversations.some(c => c.id === j.conversation.id);
         if (!exists) {
           const newConversation = {
@@ -238,8 +236,6 @@ export function Messenger({ userId }) {
           };
           setConversations([...conversations, newConversation]);
         }
-        
-        // откроем разговор и сбросим пагинацию
         setCurrentConversation(j.conversation);
         setOffset(0);
         setHasMore(true);
@@ -252,7 +248,6 @@ export function Messenger({ userId }) {
   useEffect(() => {
     if (!currentConversation) return;
 
-    // Загрузка последней страницы сообщений
     const fetchMessages = async (lim = pageSize, off = 0, prepend = false) => {
       try {
         const response = await fetch(
@@ -265,15 +260,10 @@ export function Messenger({ userId }) {
           setMessages(prev => [...msgs, ...prev]);
         } else {
           setMessages(msgs);
-          // прокрутить вниз
-          setTimeout(() => {
-            if (messageListRef.current) {
-              messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
-            }
-          }, 0);
+          // Сбросим флаги для новой загрузки
+          initialScrollDoneRef.current = false;
+          wasAtBottomRef.current = true;
         }
-
-        // Обновим offset/hasMore
         if (msgs.length < lim) setHasMore(false);
         else setHasMore(true);
         setOffset(prev => prev + msgs.length);
@@ -282,31 +272,73 @@ export function Messenger({ userId }) {
       }
     };
 
-    // reset offset and fetch latest page
     setOffset(0);
     fetchMessages(pageSize, 0, false);
   }, [currentConversation, userId]);
 
-  // Ленивая подгрузка при скролле вверх
+  // Прокрутка в конец при загрузке сообщений (если это инициализация)
   useEffect(() => {
-    const el = messageListRef.current;
-    if (!el) return;
+    if (!messageListRef.current || messages.length === 0) return;
+    if (!initialScrollDoneRef.current) {
+      messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+      initialScrollDoneRef.current = true;
+      wasAtBottomRef.current = true;
+    }
+  }, [messages]);
 
-    const handler = async () => {
-      if (el.scrollTop === 0 && hasMore && currentConversation.id) {
-        // загружаем следующую страницу старых сообщений
+  // Автоматическая прокрутка вниз при добавлении новых сообщений, если пользователь был внизу
+  useEffect(() => {
+    if (!messageListRef.current || messages.length === 0) return;
+    if (wasAtBottomRef.current) {
+      messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  // Отслеживание положения скролла для wasAtBottomRef
+  useEffect(() => {
+    const container = messageListRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 20;
+      wasAtBottomRef.current = atBottom;
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    // Начальная установка
+    handleScroll();
+
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Ленивая подгрузка старых сообщений при скролле вверх
+  useEffect(() => {
+    const container = messageListRef.current;
+    if (!container) return;
+
+    const handleScroll = async () => {
+      if (container.scrollTop === 0 && hasMore && currentConversation) {
+        // Загружаем следующую порцию старых сообщений
         try {
-          const lim = pageSize;
-          const off = offset;
-          const resp = await fetch(`/api/messenger/conversation/${currentConversation.id}/messages?limit=${lim}&offset=${off}`, { headers: { 'x-user-id': userId } });
+          const resp = await fetch(
+            `/api/messenger/conversation/${currentConversation.id}/messages?limit=${pageSize}&offset=${offset}`,
+            { headers: { 'x-user-id': userId } }
+          );
           const json = await resp.json();
           const msgs = json.messages || [];
           if (msgs.length > 0) {
+            // Сохраняем старую высоту для сохранения позиции
+            const oldScrollHeight = container.scrollHeight;
             setMessages(prev => [...msgs, ...prev]);
             setOffset(prev => prev + msgs.length);
-            if (msgs.length < lim) setHasMore(false);
-            // сохранить позицию прокрутки примерно на тот же элемент
-            setTimeout(() => { if (el) el.scrollTop = msgs.length * 60; }, 10);
+            if (msgs.length < pageSize) setHasMore(false);
+
+            // После обновления DOM восстанавливаем прокрутку
+            requestAnimationFrame(() => {
+              const newScrollHeight = container.scrollHeight;
+              const delta = newScrollHeight - oldScrollHeight;
+              container.scrollTop = delta;
+            });
           } else {
             setHasMore(false);
           }
@@ -314,17 +346,16 @@ export function Messenger({ userId }) {
       }
     };
 
-    el.addEventListener('scroll', handler);
-    return () => el.removeEventListener('scroll', handler);
-  }, [messageListRef, offset, hasMore, currentConversation, userId]);
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [currentConversation, hasMore, offset, pageSize, userId]);
 
-  // Загрузка метаданных файлов для отображения
+  // Загрузка метаданных файлов
   useEffect(() => {
     const fileIdsToFetch = new Set();
     messages.forEach(m => {
       (m.file_ids || []).forEach(fid => { if (!fileMeta.has(fid)) fileIdsToFetch.add(fid); });
     });
-
     if (fileIdsToFetch.size === 0) return;
 
     (async () => {
@@ -348,12 +379,10 @@ export function Messenger({ userId }) {
     messages.forEach(m => {
       if (m.sender_id) userIds.add(m.sender_id);
     });
-
     if (userIds.size === 0) return;
 
     userIds.forEach(senderId => {
       if (!users.has(senderId)) {
-        // Если у нас есть sender_username в сообщении, используем его
         const msg = messages.find(m => m.sender_id === senderId);
         if (msg && msg.sender_username) {
           setUsers(prev => {
@@ -377,7 +406,6 @@ export function Messenger({ userId }) {
     const content = messageInput;
     setMessageInput('');
 
-    // Если есть вложения — сперва загружаем их в API одним запросом
     let uploadedFileIds = [];
     if (attachments.length > 0) {
       try {
@@ -402,7 +430,6 @@ export function Messenger({ userId }) {
       }
     }
 
-    // Отправляем сообщение по WebSocket (включая ссылки на файлы если есть)
     wsRef.current?.send(JSON.stringify({
       type: 'send_message',
       data: {
@@ -412,7 +439,6 @@ export function Messenger({ userId }) {
       }
     }));
 
-    // Очистим список вложений после отправки
     setAttachments([]);
   };
 
@@ -424,12 +450,7 @@ export function Messenger({ userId }) {
       data: { conversationId: currentConversation.id }
     }));
 
-    // Очищаем предыдущий таймер
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-    }
-
-    // Устанавливаем новый таймер для остановки печати
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
       wsRef.current?.send(JSON.stringify({
         type: 'typing_stop',
@@ -438,11 +459,9 @@ export function Messenger({ userId }) {
     }, 3000);
   };
 
-  const handleFileUpload = async (e) => {
+  const handleFileUpload = (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length || !currentConversation.id) return;
-
-    // Добавляем выбранные файлы в список вложений (не отправляем сразу)
     setAttachments(prev => [...prev, ...files]);
     e.target.value = '';
   };
@@ -465,20 +484,15 @@ export function Messenger({ userId }) {
   };
 
   const getStatusText = (userId) => {
-    if (onlineUsers.has(userId)) {
-      return 'онлайн';
-    }
+    if (onlineUsers.has(userId)) return 'онлайн';
     const user = users.get(userId);
-    if (user?.timeAgoText) {
-      return user.timeAgoText;
-    }
+    if (user?.timeAgoText) return user.timeAgoText;
     return 'офлайн';
   };
 
   if (!storageInfo) return null;
 
   const { quota, serverStatus } = storageInfo;
-
   if (serverStatus?.isLowSpace) {
     return (
       <div className="storage-warning">
@@ -488,12 +502,12 @@ export function Messenger({ userId }) {
   }
 
   const percentage = quota.percentageUsed || 0;
-  
+
   return (
     <div className="messenger-container">
       <div className="window messenger-sidebar">
         <p><strong>Разговоры</strong></p>
-        <div style={{ display: 'flex', gap: 8 ,flexDirection:'column'}}>
+        <div style={{ display: 'flex', gap: 8, flexDirection: 'column' }}>
           <button onClick={openFavorites}>Избранное</button>
           <button onClick={() => setShowUserSearch(s => !s)}>
             Найти пользователя
@@ -504,25 +518,20 @@ export function Messenger({ userId }) {
         )}
         <div className="conversations-list">
           {conversations.map(conv => {
-            // Получаем ID других участников (исключая текущего пользователя)
             const participantIds = conv.participant_ids ? JSON.parse(conv.participant_ids) : [];
             const otherParticipant = participantIds.find(id => id !== userId);
             const otherUser = otherParticipant ? users.get(otherParticipant) : null;
             const displayName = otherUser?.username || conv.title || conv.id;
-            
+
             return (
               <button
                 key={conv.id}
-                className={`conversation-item ${currentConversation&&currentConversation.id === conv.id ? 'active' : ''}`}
+                className={`conversation-item ${currentConversation && currentConversation.id === conv.id ? 'active' : ''}`}
                 onClick={() => setCurrentConversation(conv)}
                 style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'flex-start' }}
               >
                 {otherParticipant && (
-                  <Avatar 
-                    userId={otherParticipant} 
-                    username={displayName}
-                    size={32}
-                  />
+                  <Avatar userId={otherParticipant} username={displayName} size={32} />
                 )}
                 <span>{displayName}</span>
               </button>
@@ -538,23 +547,13 @@ export function Messenger({ userId }) {
               <p><strong>{currentConversation.title}</strong></p>
               <p>{storageInfo.message}</p>
               <div className="progress-indicator segmented">
-                <span className="progress-indicator-bar" style={{width: `${Math.min(percentage, 100)}%`}}/>
+                <span className="progress-indicator-bar" style={{ width: `${Math.min(percentage, 100)}%` }} />
               </div>
               <p className="storage-percentage">Занято {percentage}%</p>
-            </div>
 
-            <div className="messages-list" ref={messageListRef}>
-              {messages.map(msg => (
-                <Message key={msg.id} 
-                  msg={msg} 
-                  fileMeta={fileMeta} 
-                  users={users} 
-                  onDelete={removeMessageFromList}
-                  wsRef={wsRef}
-                />
-              ))}
+              {/* Индикаторы печати и загрузки перенесены сюда */}
               {typingUsers.size > 0 && (
-                <div className="typing-indicator">
+                <div className="typing-indicator-header">
                   {Array.from(typingUsers).map(id => {
                     const u = users.get(id);
                     return (u && (u.username || u.displayName || u.name)) || id;
@@ -562,10 +561,23 @@ export function Messenger({ userId }) {
                 </div>
               )}
               {uploadingUsers.size > 0 && (
-                <div className="uploading-indicator">
+                <div className="uploading-indicator-header">
                   Загружаются файлы: {Array.from(uploadingUsers.values()).join(', ')}
                 </div>
               )}
+            </div>
+
+            <div className="messages-list" ref={messageListRef}>
+              {messages.map(msg => (
+                <Message
+                  key={msg.id}
+                  msg={msg}
+                  fileMeta={fileMeta}
+                  users={users}
+                  onDelete={removeMessageFromList}
+                  wsRef={wsRef}
+                />
+              ))}
             </div>
 
             <div className="window message-input-area field-row-stacked" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
