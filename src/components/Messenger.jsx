@@ -25,10 +25,35 @@ export function Messenger({ userId }) {
   const [showUserSearch, setShowUserSearch] = useState(false);
   const typingTimeoutRef = useRef(null);
 
+  // Новые состояния для счётчика непрочитанных
+  const [unreadCounts, setUnreadCounts] = useState({});
+
   // Флаг для отслеживания, был ли скролл внизу
   const wasAtBottomRef = useRef(true);
   // Флаг для первоначальной прокрутки в конец при смене чата
   const initialScrollDoneRef = useRef(false);
+
+  // Воспроизведение короткого звукового сигнала через Web Audio API
+  const playNotificationSound = useCallback(() => {
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 880; // частота 880 Гц
+      gainNode.gain.value = 0.3;        // громкость
+      oscillator.start();
+      // затухание за 0.5 секунды
+      gainNode.gain.exponentialRampToValueAtTime(0.00001, audioContext.currentTime + 0.5);
+      oscillator.stop(audioContext.currentTime + 0.5);
+      // возобновляем контекст, если он был приостановлен (политика автозапуска)
+      audioContext.resume();
+    } catch (err) {
+      console.error('Ошибка воспроизведения звука:', err);
+    }
+  }, []);
 
   // Создать чат с найденным пользователем
   const handleUserSelected = async (user) => {
@@ -92,6 +117,7 @@ export function Messenger({ userId }) {
 
     switch (type) {
       case 'forward_message':
+        console.log('forward_message received:', data.message);
         if (currentConversation && currentConversation.id === data.message?.conversation_id) {
           setMessages(prev => [...prev, data.message]);
           if (data.message.file_ids && data.message.file_ids.length > 0) {
@@ -116,10 +142,33 @@ export function Messenger({ userId }) {
             }
           }
         }
+        // Уведомление о пересланном сообщении, если не от текущего пользователя и чат не активен
+        if (data.message && data.message.sender_id !== userId) {
+          const conversationId = data.message.conversation_id;
+          if (!currentConversation || currentConversation.id !== conversationId) {
+            setUnreadCounts(prev => ({
+              ...prev,
+              [conversationId]: (prev[conversationId] || 0) + 1
+            }));
+            playNotificationSound();
+          }
+        }
         break;
 
       case 'new_message':
+        console.log('new_message received:', data.message);
         setMessages(prev => [...prev, data.message]);
+        // Уведомление о новом сообщении
+        if (data.message && data.message.sender_id !== userId) {
+          const conversationId = data.message.conversation_id;
+          if (!currentConversation || currentConversation.id !== conversationId) {
+            setUnreadCounts(prev => ({
+              ...prev,
+              [conversationId]: (prev[conversationId] || 0) + 1
+            }));
+            playNotificationSound();
+          }
+        }
         break;
 
       case 'user_typing':
@@ -178,7 +227,7 @@ export function Messenger({ userId }) {
       default:
         console.log('Неизвестный тип сообщения:', type);
     }
-  }, [currentConversation, fileMeta, userId]);
+  }, [currentConversation, fileMeta, userId, playNotificationSound]);
 
   // Получение хранилища
   useEffect(() => {
@@ -275,6 +324,17 @@ export function Messenger({ userId }) {
     setOffset(0);
     fetchMessages(pageSize, 0, false);
   }, [currentConversation, userId]);
+
+  // Сброс счётчика непрочитанных при открытии чата
+  useEffect(() => {
+    if (currentConversation) {
+      setUnreadCounts(prev => {
+        const newCounts = { ...prev };
+        delete newCounts[currentConversation.id];
+        return newCounts;
+      });
+    }
+  }, [currentConversation]);
 
   // Прокрутка в конец при загрузке сообщений (если это инициализация)
   useEffect(() => {
@@ -534,6 +594,9 @@ export function Messenger({ userId }) {
                   <Avatar userId={otherParticipant} username={displayName} size={32} />
                 )}
                 <span>{displayName}</span>
+                {unreadCounts[conv.id] > 0 && (
+                  <span className="unread-badge">{unreadCounts[conv.id]}</span>
+                )}
               </button>
             );
           })}
@@ -551,7 +614,7 @@ export function Messenger({ userId }) {
               </div>
               <p className="storage-percentage">Занято {percentage}%</p>
 
-              {/* Индикаторы печати и загрузки перенесены сюда */}
+              {/* Индикаторы печати и загрузки */}
               {typingUsers.size > 0 && (
                 <div className="typing-indicator-header">
                   {Array.from(typingUsers).map(id => {
