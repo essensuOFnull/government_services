@@ -128,11 +128,11 @@ export default function FileItem({ fileId, fileMeta = {} }) {
 
       <div className="file-actions">
         <button onClick={handleDownload} className="download-btn">
-          Скачать
+          💾
         </button>
         {(!isText) && (
           <button onClick={handleOpen} className="open-btn">
-            Открыть
+            👁️
           </button>
         )}
       </div>

@@ -65,7 +65,7 @@ export default function ForwardButton({ msg, wsRef }) {
           if (!show) fetchConversations(); 
         }} 
         title="Переслать"
-      >Переслать
+      >↗️
       </button>
       {show && (
         <div 

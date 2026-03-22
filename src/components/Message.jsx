@@ -117,7 +117,7 @@ export default function Message({ msg, fileMeta = new Map(), users = new Map(), 
                 alert('Ошибка удаления сообщения');
               }
             }}
-          >Удалить
+          >🗑️
           </button>
         )}
         <ForwardButton msg={msg} wsRef={wsRef}/>
