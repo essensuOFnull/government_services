@@ -593,6 +593,20 @@ class MessengerWebSocketServer {
       await file.update({ reference_count: (file.reference_count || 0) + 1 });
     }
   }
+  // Добавьте этот метод в класс MessengerWebSocketServer
+  async sendStorageUpdate(userId) {
+    try {
+      // Импортируем storageManager (возможно, потребуется передать его через конструктор)
+      const storageManager = require('./messenger-storage.cjs');
+      const storageInfo = await storageManager.getStorageInfo(userId);
+      this.broadcastToUser(userId, {
+        type: 'storage_info_updated',
+        storageInfo
+      });
+    } catch (err) {
+      console.error('Error sending storage update to user', userId, err);
+    }
+  }
 }
 
 module.exports = MessengerWebSocketServer;

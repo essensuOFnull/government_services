@@ -255,8 +255,8 @@ export function Messenger({ userId }) {
           setMessages(prev => prev.filter(m => m.id !== data.messageId));
         }
         break;
-      case 'storage_updated':
-        console.log('storage_updated received:', data.storageInfo);
+      case 'storage_info_updated':
+        console.log('storage_info_updated received:', data.storageInfo);
         setStorageInfo(data.storageInfo);
         break;
       case 'user_left_chat':
@@ -284,6 +284,9 @@ export function Messenger({ userId }) {
         if (currentConversationRef.current && currentConversationRef.current.id === data.conversationId) {
           setCurrentConversation(null);
         }
+        break;
+      case 'storage_info_updated':
+        setStorageInfo(data.storageInfo);
         break;
       default:
         console.log('Неизвестный тип сообщения:', type);

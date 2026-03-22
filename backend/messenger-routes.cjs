@@ -602,64 +602,59 @@ router.delete('/delete-message/:messageId', authenticateUser, async (req, res) =
 
     // Обработка файлов, связанных с сообщением
     for (const fid of fileIds) {
-      // Узнаём текущее число ссылок на файл (через FileReference)
       const refCount = await FileReference.count({ where: { file_id: fid } });
 
       if (refCount <= 1) {
-        // Никто больше не ссылается — удаляем файл полностью
         const file = await File.findByPk(fid);
         if (file) {
           try {
             await s3Service.deleteFile(file.s3_key);
-          } catch (e) {
-            console.error('Ошибка удаления s3 файла:', e);
-          }
+          } catch (e) { console.error('Ошибка удаления s3 файла:', e); }
           await file.destroy();
-          // Вычитаем размер из квоты текущего владельца (отправителя)
           try {
             await storageManager.removeFileFromQuota(file.owner_id, file.size || 0);
-          } catch (e) {
-            console.error('quota adjust error', e);
-          }
+            if (wsServer) {
+              const newStorageInfo = await storageManager.getStorageInfo(file.owner_id);
+              wsServer.broadcastToUser(file.owner_id, {
+                type: 'storage_info_updated',
+                storageInfo: newStorageInfo
+              });
+            }
+          } catch (e) { console.error('quota adjust error', e); }
         }
       } else {
-        // Есть другие ссылки — передаём владение первому другому ссылочнику
         const otherRef = await FileReference.findOne({
-          where: { file_id: fid, message_id: { [Op.ne]: messageId } }
+          where: { file_id: fid, message_id: { [Op.ne]: message.id } }
         });
         if (otherRef) {
           const otherMessage = await Message.findByPk(otherRef.message_id);
           if (otherMessage) {
             const file = await File.findByPk(fid);
             const oldOwner = file ? file.owner_id : null;
-            // Передаём владение владельцу другого сообщения
-            await file.update({ owner_id: otherMessage.sender_id });
-            // Обновляем квоты
+            const newOwner = otherMessage.sender_id; // объявляем newOwner
+            await file.update({ owner_id: newOwner });
             try {
               if (oldOwner) await storageManager.removeFileFromQuota(oldOwner, file.size || 0);
-              await storageManager.addFileToQuota(otherMessage.sender_id, file.size || 0);
-            } catch (e) {
-              console.error('quota transfer error', e);
-              // Не прерываем удаление, если квота превышена — просто логируем
-            }
-            // Отправить новому владельцу обновлённую информацию о квоте
-            const newOwner = otherMessage.sender_id;
-            const newStorageInfo = await storageManager.getStorageInfo(newOwner);
-            const wsServer = req.app.get('wsServer');
-            if (wsServer) {
-              wsServer.broadcastToUser(newOwner, {
-                type: 'storage_updated',
-                storageInfo: newStorageInfo
-              });
-            } else {
-              console.warn('WebSocket server not available');
-            }
+              await storageManager.addFileToQuota(newOwner, file.size || 0);
+              if (wsServer) {
+                if (oldOwner) {
+                  const oldInfo = await storageManager.getStorageInfo(oldOwner);
+                  wsServer.broadcastToUser(oldOwner, {
+                    type: 'storage_info_updated',
+                    storageInfo: oldInfo
+                  });
+                }
+                const newInfo = await storageManager.getStorageInfo(newOwner);
+                wsServer.broadcastToUser(newOwner, {
+                  type: 'storage_info_updated',
+                  storageInfo: newInfo
+                });
+              }
+            } catch (e) { console.error('quota transfer error', e); }
           }
         }
       }
-
-      // Удаляем ссылку из file_references для этого сообщения
-      await FileReference.destroy({ where: { file_id: fid, message_id: messageId } });
+      await FileReference.destroy({ where: { file_id: fid, message_id: message.id } });
     }
 
     // Удаляем само сообщение (физически)
@@ -1465,6 +1460,14 @@ router.delete('/clear-chat', authenticateUser, async (req, res) => {
             await file.destroy();
             try {
               await storageManager.removeFileFromQuota(file.owner_id, file.size || 0);
+              // Отправляем обновление квоты владельцу (у кого уменьшилась)
+              if (wsServer) {
+                const newStorageInfo = await storageManager.getStorageInfo(file.owner_id);
+                wsServer.broadcastToUser(file.owner_id, {
+                  type: 'storage_info_updated',
+                  storageInfo: newStorageInfo
+                });
+              }
             } catch (e) { console.error('quota adjust error', e); }
           }
         } else {
@@ -1476,10 +1479,26 @@ router.delete('/clear-chat', authenticateUser, async (req, res) => {
             if (otherMessage) {
               const file = await File.findByPk(fid);
               const oldOwner = file ? file.owner_id : null;
-              await file.update({ owner_id: otherMessage.sender_id });
+              const newOwner = otherMessage.sender_id;
+              await file.update({ owner_id: newOwner });
               try {
                 if (oldOwner) await storageManager.removeFileFromQuota(oldOwner, file.size || 0);
-                await storageManager.addFileToQuota(otherMessage.sender_id, file.size || 0);
+                await storageManager.addFileToQuota(newOwner, file.size || 0);
+                // Отправляем обновления квот обоим пользователям
+                if (wsServer) {
+                  if (oldOwner) {
+                    const oldInfo = await storageManager.getStorageInfo(oldOwner);
+                    wsServer.broadcastToUser(oldOwner, {
+                      type: 'storage_info_updated',
+                      storageInfo: oldInfo
+                    });
+                  }
+                  const newInfo = await storageManager.getStorageInfo(newOwner);
+                  wsServer.broadcastToUser(newOwner, {
+                    type: 'storage_info_updated',
+                    storageInfo: newInfo
+                  });
+                }
               } catch (e) { console.error('quota transfer error', e); }
             }
           }
