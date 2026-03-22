@@ -259,6 +259,32 @@ export function Messenger({ userId }) {
         console.log('storage_updated received:', data.storageInfo);
         setStorageInfo(data.storageInfo);
         break;
+      case 'user_left_chat':
+        console.log('user_left_chat received:', data);
+        // Удаляем сообщения от этого пользователя из текущего чата, если они есть
+        if (currentConversationRef.current && currentConversationRef.current.id === data.conversationId) {
+          setMessages(prev => prev.filter(m => m.sender_id !== data.userId));
+        }
+        // Уведомление (можно показать тост)
+        // Не удаляем чат из списка, просто обновляем сообщения
+        break;
+
+      case 'conversation_deleted':
+        console.log('conversation_deleted received:', data);
+        setConversations(prev => prev.filter(c => c.id !== data.conversationId));
+        if (currentConversationRef.current && currentConversationRef.current.id === data.conversationId) {
+          setCurrentConversation(null);
+        }
+        break;
+
+      case 'chat_cleared_for_me':
+        console.log('chat_cleared_for_me received:', data);
+        // Только для текущего пользователя: удаляем чат из списка
+        setConversations(prev => prev.filter(c => c.id !== data.conversationId));
+        if (currentConversationRef.current && currentConversationRef.current.id === data.conversationId) {
+          setCurrentConversation(null);
+        }
+        break;
       default:
         console.log('Неизвестный тип сообщения:', type);
     }
@@ -598,6 +624,37 @@ export function Messenger({ userId }) {
 
   const percentage = quota.percentageUsed || 0;
 
+  const clearChat = async () => {
+    if (!currentConversation) return;
+
+    const confirmClear = window.confirm(
+      'Вы уверены, что хотите удалить ВСЕ свои сообщения в этом чате и выйти из него?\nЭто действие необратимо, ваши сообщения и файлы будут удалены для всех.'
+    );
+    if (!confirmClear) return;
+
+    try {
+      const response = await fetch('/api/messenger/clear-chat', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': userId
+        },
+        body: JSON.stringify({ conversationId: currentConversation.id })
+      });
+      const data = await response.json();
+      if (data.success) {
+        // WebSocket обработает удаление чата, но для мгновенности можно:
+        setConversations(prev => prev.filter(c => c.id !== currentConversation.id));
+        setCurrentConversation(null);
+      } else {
+        alert('Ошибка при очистке чата: ' + data.message);
+      }
+    } catch (error) {
+      console.error('Ошибка очистки чата:', error);
+      alert('Ошибка сервера');
+    }
+  };
+
   return (
     <div className="messenger-container">
       <div className="window messenger-sidebar">
@@ -647,8 +704,12 @@ export function Messenger({ userId }) {
               <div className="progress-indicator segmented">
                 <span className="progress-indicator-bar" style={{ width: `${Math.min(percentage, 100)}%` }} />
               </div>
-              <p className="storage-percentage">Занято {percentage}%</p>
-
+              <div style={{display:'flex',justifyContent:'space-between',flexDirection:'row'}}>
+                <p className="storage-percentage">Занято {percentage}%</p>
+                <button onClick={clearChat} className="clear-chat-button" title="Удалить все свои сообщения в этом чате">
+                  🗑️ Очистить чат
+                </button>
+              </div>
               {/* Индикаторы печати и загрузки */}
               {typingUsers.size > 0 && (
                 <div className="typing-indicator-header">

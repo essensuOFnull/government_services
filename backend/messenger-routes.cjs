@@ -1433,4 +1433,139 @@ router.post('/crossout/get-latest-prices', async (req, res) => {
   }
 });
 
+// Очистка чата: удаление всех сообщений текущего пользователя в указанном разговоре
+router.delete('/clear-chat', authenticateUser, async (req, res) => {
+  try {
+    const { conversationId } = req.body;
+    const userId = req.user.id;
+
+    // Находим все сообщения текущего пользователя в этом разговоре
+    const messages = await Message.findAll({
+      where: {
+        conversation_id: conversationId,
+        sender_id: userId
+      }
+    });
+
+    const wsServer = req.app.get('wsServer');
+
+    // Обрабатываем каждое сообщение (аналогично delete-message)
+    for (const message of messages) {
+      const fileIds = message.file_ids ? JSON.parse(message.file_ids) : [];
+
+      for (const fid of fileIds) {
+        const refCount = await FileReference.count({ where: { file_id: fid } });
+
+        if (refCount <= 1) {
+          const file = await File.findByPk(fid);
+          if (file) {
+            try {
+              await s3Service.deleteFile(file.s3_key);
+            } catch (e) { console.error('Ошибка удаления s3 файла:', e); }
+            await file.destroy();
+            try {
+              await storageManager.removeFileFromQuota(file.owner_id, file.size || 0);
+            } catch (e) { console.error('quota adjust error', e); }
+          }
+        } else {
+          const otherRef = await FileReference.findOne({
+            where: { file_id: fid, message_id: { [Op.ne]: message.id } }
+          });
+          if (otherRef) {
+            const otherMessage = await Message.findByPk(otherRef.message_id);
+            if (otherMessage) {
+              const file = await File.findByPk(fid);
+              const oldOwner = file ? file.owner_id : null;
+              await file.update({ owner_id: otherMessage.sender_id });
+              try {
+                if (oldOwner) await storageManager.removeFileFromQuota(oldOwner, file.size || 0);
+                await storageManager.addFileToQuota(otherMessage.sender_id, file.size || 0);
+              } catch (e) { console.error('quota transfer error', e); }
+            }
+          }
+        }
+        await FileReference.destroy({ where: { file_id: fid, message_id: message.id } });
+      }
+      await message.destroy();
+    }
+
+    // Удаляем пользователя из участников чата
+    await ConversationParticipant.destroy({
+      where: {
+        conversation_id: conversationId,
+        participant_id: userId
+      }
+    });
+
+    // Проверяем, остались ли участники
+    const remainingParticipants = await ConversationParticipant.count({
+      where: { conversation_id: conversationId }
+    });
+
+    let conversationDeleted = false;
+    if (remainingParticipants === 0) {
+      // Нет участников — удаляем разговор
+      await Conversation.destroy({ where: { id: conversationId } });
+      conversationDeleted = true;
+    } else {
+      // Обновляем last_message_at, если остались сообщения от других
+      const lastMessage = await Message.findOne({
+        where: { conversation_id: conversationId },
+        order: [['created_at', 'DESC']]
+      });
+      await Conversation.update(
+        { last_message_at: lastMessage ? lastMessage.created_at : null },
+        { where: { id: conversationId } }
+      );
+    }
+
+    // Уведомляем всех участников (кроме текущего) о том, что пользователь вышел
+    // и его сообщения удалены. Текущему пользователю отправляем событие для очистки интерфейса.
+    if (wsServer) {
+      // Получаем список участников (без текущего)
+      const participants = await ConversationParticipant.findAll({
+        where: { conversation_id: conversationId },
+        attributes: ['participant_id']
+      });
+      const otherParticipantIds = participants.map(p => p.participant_id);
+
+      // Уведомляем остальных участников, что пользователь покинул чат и его сообщения удалены
+      for (const pid of otherParticipantIds) {
+        wsServer.broadcastToUser(pid, {
+          type: 'user_left_chat',
+          conversationId: conversationId,
+          userId: userId,
+          username: req.user.username
+        });
+      }
+
+      // Если чат удалён полностью, уведомляем всех участников (они уже получили user_left_chat, но могут не знать о полном удалении)
+      if (conversationDeleted) {
+        // Удаляем чат у всех (включая текущего) — это уже не нужно, так как участников нет, но на всякий случай
+        for (const pid of participants.map(p => p.participant_id)) {
+          wsServer.broadcastToUser(pid, {
+            type: 'conversation_deleted',
+            conversationId: conversationId
+          });
+        }
+      } else {
+        // Текущему пользователю отправляем событие очистки чата
+        wsServer.broadcastToUser(userId, {
+          type: 'chat_cleared_for_me',
+          conversationId: conversationId
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Чат очищен',
+      conversationDeleted
+    });
+  } catch (error) {
+    console.error('Error clearing chat:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;
