@@ -27,30 +27,6 @@ const app = express();
 const PORT = process.env.PORT || 22869;
 const isDev = process.env.NODE_ENV !== 'production';
 
-// Middleware безопасности
-if (isDev) {
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        connectSrc: ["'self'", "ws://localhost:24678", "ws://127.0.0.1:24678", "http://localhost:22869", "ws://localhost:22869"]
-      }
-    }
-  }));
-} else {
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'"]
-      }
-    }
-  }));
-}
-
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:22869',
   credentials: true

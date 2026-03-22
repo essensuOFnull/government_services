@@ -104,7 +104,7 @@ export default function DecorDisassembling() {
 
 			// Подключаемся к WebSocket
 			if (!wsRef.current) {
-				const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+				const protocol = window.location.protocol === 'http:' ? 'wss:' : 'ws:';
 				const wsUrl = `${protocol}//${window.location.host}/ws/messenger?userId=${user?.id}`;
 				
 				try {
