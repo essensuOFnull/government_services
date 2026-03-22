@@ -50,7 +50,7 @@ export function Messenger({ userId }) {
   useEffect(() => {
     if (!userId) return;
 
-    const scheme = window.location.protocol === 'http:' ? 'wss' : 'ws';
+    const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const host = window.location.host || `${window.location.hostname}:${window.location.port || 22869}`;
     const wsUrl = `${scheme}://${host}/ws/messenger?userId=${encodeURIComponent(userId)}`;
     try {
