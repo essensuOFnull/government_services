@@ -642,6 +642,18 @@ router.delete('/delete-message/:messageId', authenticateUser, async (req, res) =
               console.error('quota transfer error', e);
               // Не прерываем удаление, если квота превышена — просто логируем
             }
+            // Отправить новому владельцу обновлённую информацию о квоте
+            const newOwner = otherMessage.sender_id;
+            const newStorageInfo = await storageManager.getStorageInfo(newOwner);
+            const wsServer = req.app.get('wsServer');
+            if (wsServer) {
+              wsServer.broadcastToUser(newOwner, {
+                type: 'storage_updated',
+                storageInfo: newStorageInfo
+              });
+            } else {
+              console.warn('WebSocket server not available');
+            }
           }
         }
       }

@@ -255,7 +255,10 @@ export function Messenger({ userId }) {
           setMessages(prev => prev.filter(m => m.id !== data.messageId));
         }
         break;
-
+      case 'storage_updated':
+        console.log('storage_updated received:', data.storageInfo);
+        setStorageInfo(data.storageInfo);
+        break;
       default:
         console.log('Неизвестный тип сообщения:', type);
     }
