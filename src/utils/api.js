@@ -7,13 +7,19 @@ const api = {
   async request(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
     console.log(`API request -> ${options.method || 'GET'} ${url}`);
-    // Получаем userId из storage, если есть
+
+    // Читаем userId из sessionStorage
     let userId = null;
     try {
-      const storageModule = await import('./storage');
-      const authData = storageModule.storage.getAuthData();
-      userId = authData?.id || null;
-    } catch (e) { userId = null; }
+      const authDataStr = sessionStorage.getItem('messenger_auth');
+      if (authDataStr) {
+        const authData = JSON.parse(authDataStr);
+        userId = authData.id;
+      }
+    } catch (e) {
+      userId = null;
+    }
+
     const defaultOptions = {
       headers: {
         'Content-Type': 'application/json',
@@ -21,6 +27,7 @@ const api = {
       },
       credentials: 'include'
     };
+
     try {
       const response = await fetch(url, {
         ...defaultOptions,
@@ -39,7 +46,7 @@ const api = {
         data = await response.text();
       }
 
-      console.log(`API response <- ${response.status} ${url}` , data);
+      console.log(`API response <- ${response.status} ${url}`, data);
 
       if (!response.ok) {
         const msg = (data && data.message) ? data.message : `HTTP ${response.status}`;
@@ -53,7 +60,6 @@ const api = {
     }
   },
 
-  // Методы API
   async register(username, password) {
     return this.request('/register', {
       method: 'POST',
@@ -85,9 +91,10 @@ const api = {
   async getUser(id) {
     return this.request(`/user/${id}`);
   },
-  // Поиск пользователя по username
+
   async findUserByUsername(username) {
     return this.request(`/messenger/find-user?username=${encodeURIComponent(username)}`);
   }
 };
+
 export default api;
