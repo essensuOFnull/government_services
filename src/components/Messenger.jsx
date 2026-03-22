@@ -596,7 +596,7 @@ export function Messenger({ userId }) {
               <div className="message-actions">
                 <button>
                   <label>
-                    📎 Файл
+                    📎
                     <input
                       type="file"
                       multiple

@@ -90,40 +90,42 @@ export default function Message({ msg, fileMeta = new Map(), users = new Map(), 
           ))}
         </div>
       )}
-
-      <div className="message-controls">
-        {isCurrentUser && (
-          <button 
-            onClick={async () => {
-              if (!confirm('Удалить сообщение? Это действие нельзя отменить.')) 
-                return;
-              try {
-                const resp = await fetch(
-                  `/api/messenger/delete-message/${msg.id}`, 
-                  { 
-                    method: 'DELETE', 
-                    headers: { 'x-user-id': user.id } 
+      <div style={{display:'flex',flexDirection:'column'}}>
+        <div className="message-controls">
+          {isCurrentUser && (
+            <button 
+              onClick={async () => {
+                if (!confirm('Удалить сообщение? Это действие нельзя отменить.')) 
+                  return;
+                try {
+                  const resp = await fetch(
+                    `/api/messenger/delete-message/${msg.id}`, 
+                    { 
+                      method: 'DELETE', 
+                      headers: { 'x-user-id': user.id } 
+                    }
+                  );
+                  const j = await resp.json();
+                  if (resp.ok && j.success) {
+                    if (typeof onDelete === 'function') 
+                      onDelete(msg.id, j.storageInfo);
+                  } else {
+                    alert(j.message || 'Не удалось удалить сообщение');
                   }
-                );
-                const j = await resp.json();
-                if (resp.ok && j.success) {
-                  if (typeof onDelete === 'function') 
-                    onDelete(msg.id, j.storageInfo);
-                } else {
-                  alert(j.message || 'Не удалось удалить сообщение');
+                } catch (e) {
+                  console.error('delete message error', e);
+                  alert('Ошибка удаления сообщения');
                 }
-              } catch (e) {
-                console.error('delete message error', e);
-                alert('Ошибка удаления сообщения');
-              }
-            }}
-          >🗑️
-          </button>
-        )}
-        <ForwardButton msg={msg} wsRef={wsRef}/>
+              }}
+            >🗑️
+            </button>
+          )}
+          <ForwardButton msg={msg} wsRef={wsRef}/>
+        </div>
+        <div style={{display:'flex',flexDirection:'row',justifyContent:'flex-end'}}>
+          <small>{formatTime(msg.created_at)}</small>
+        </div>
       </div>
-
-      <small>{formatTime(msg.created_at)}</small>
     </div>
   );
 }
