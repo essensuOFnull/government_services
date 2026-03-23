@@ -32,7 +32,6 @@ export function Messenger({ userId }) {
 
   // ========== Новые состояния для sidebar ==========
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isSidebarHidden, setIsSidebarHidden] = useState(false);
 
   // ========== Рефы для отслеживания размеров ==========
   const containerRef = useRef(null);
@@ -122,11 +121,7 @@ export function Messenger({ userId }) {
 
   // ========== Обработчики sidebar ==========
   const toggleSidebar = () => {
-    const newCollapsed = !isSidebarCollapsed;
-    if (!newCollapsed) {
-      setIsSidebarHidden(false);
-    }
-    setIsSidebarCollapsed(newCollapsed);
+    setIsSidebarCollapsed(prev => !prev);
   };
 
   const handleTransitionEnd = (e) => {
@@ -419,7 +414,10 @@ export function Messenger({ userId }) {
       const res = await fetch('/api/messenger/conversation/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
-        body: JSON.stringify({ participantIds: [userId] })
+        body: JSON.stringify({
+          participantIds: [userId],
+          forceNew: true   // <-- новый флаг
+        })
       });
       const j = await res.json();
       if (j.success && j.conversation) {
@@ -438,7 +436,7 @@ export function Messenger({ userId }) {
         setMessages([]);
       }
     } catch (e) { console.error(e); }
-  };
+};
 
   useEffect(() => {
     if (!currentConversation) return;
@@ -730,11 +728,7 @@ export function Messenger({ userId }) {
   // ========== Рендер ==========
   return (
     <div className={`messenger-container ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`} ref={containerRef}>
-      <div
-        className={`window messenger-sidebar ${isSidebarHidden ? 'hidden' : ''}`}
-        ref={handleSidebarRef}
-        onTransitionEnd={handleTransitionEnd}
-      >
+      <div className="window messenger-sidebar">
         <p><strong>Разговоры</strong></p>
         <div style={{ display: 'flex', gap: 8, flexDirection: 'column' }}>
           <button onClick={openFavorites}>Избранное</button>
@@ -742,6 +736,7 @@ export function Messenger({ userId }) {
             Найти пользователя
           </button>
         </div>
+        <hr style={{width:'100%'}}/>
         {showUserSearch && (
           <UserSearch onUserSelected={handleUserSelected} />
         )}
@@ -770,7 +765,6 @@ export function Messenger({ userId }) {
             );
           })}
         </div>
-        <div className="crutch-overlay"></div>
       </div>
 
       <div className="messenger-main">

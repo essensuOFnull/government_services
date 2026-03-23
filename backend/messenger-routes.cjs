@@ -694,7 +694,7 @@ router.delete('/delete-message/:messageId', authenticateUser, async (req, res) =
 // Создание разговора
 router.post('/conversation/create', authenticateUser, async (req, res) => {
   try {
-    const { participantIds } = req.body;
+    const { participantIds, forceNew } = req.body;
 
     if (!Array.isArray(participantIds) || participantIds.length === 0) {
       return res.status(400).json({
@@ -710,22 +710,27 @@ router.post('/conversation/create', authenticateUser, async (req, res) => {
 
     // Сортируем ID для уникальности
     const sortedIds = [...participantIds].sort();
-    
-    // Проверяем, существует ли уже такой разговор
-    const existingConversations = await Conversation.findAll({
-      include: [{
-        model: User,
-        as: 'participants',
-        where: { id: sortedIds }
-      }]
-    });
 
-    let conversation = existingConversations.find(conv => 
-      conv.participants.length === sortedIds.length
-    );
+    let conversation = null;
+
+    // Если не принудительное создание, проверяем существующий диалог
+    if (!forceNew) {
+      // ... существующая логика поиска ...
+      const existingConversations = await Conversation.findAll({
+        include: [{
+          model: User,
+          as: 'participants',
+          where: { id: sortedIds }
+        }]
+      });
+
+      conversation = existingConversations.find(conv =>
+        conv.participants.length === sortedIds.length
+      );
+    }
 
     if (!conversation) {
-      // Создаем новый разговор
+      // Создаём новый разговор
       conversation = await Conversation.create({
         id: uuid(),
         created_at: Date.now(),

@@ -1,38 +1,38 @@
 .messenger-container {
-  position: relative;
   display: flex;
   height: 100%;
   overflow-x: hidden;
-  --menu-toggle-width:50px;
 }
 
 .messenger-sidebar {
-  left:0;
-  top:0;
-  bottom:0;
-  height:auto;
-  position:absolute;
-  width: fit-content;
+  width:fit-content;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  overflow: auto;
-  transition:left 0.2s ease;
+  overflow-y:scroll;
+  overflow-x:hidden;
+  position: relative;
+  max-width:50%;
+}
+/* При схлопывании ширина = 0, содержимое скрываем */
+.sidebar-collapsed .messenger-sidebar {
+  display: none;
 }
 
-.messenger-sidebar.hidden {
-  margin: 0 !important;
-  padding: 0 !important;
-  border: none !important;
-  overflow: hidden !important;
-}
-
-.sidebar-collapsed .messenger-sidebar{
-  left:-100%;
+/* Чтобы при нулевой ширине скрыть содержимое */
+.sidebar-collapsed .messenger-sidebar > * {
+  display: none;
 }
 
 .conversations-list {
+  display:flex;
   flex: 1;
   overflow: hidden;
+  gap:8px;
+  flex-direction:column;
+}
+.conversations-list *{
+  width: 100%;
 }
 
 .messenger-header{
@@ -48,13 +48,12 @@
   background: #007bff;
 }
 
+/* Главная область автоматически растягивается */
 .messenger-main {
-  margin-left:var(--sidebar-width);
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: margin-left 0.2s ease;
 }
 
 .sidebar-collapsed .messenger-main{
@@ -67,7 +66,8 @@
 
 .messages-list {
   flex: 1;
-  overflow: auto;
+  overflow-x:hidden;
+  overflow-y:scroll;
   display: flex;
   flex-direction: column;
 }
@@ -120,6 +120,7 @@
   flex-wrap:wrap;
   justify-content:space-between;
   gap:8px;
+  position:relative;
 }
 .message-actions *{
   height:25px;
@@ -155,25 +156,12 @@ button{
   overflow: hidden;
 }
 
+/* Кнопка меню (☰) – остаётся внизу, но теперь привязана к главной области */
 .menu-toggle {
   position: relative;
-  left: -5px; /* по желанию */
-  border-radius: 0 8px 8px 0;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--menu-toggle-width, 40px);
-  min-width: 0;
-  z-index: 1000;
-}
-
-.crutch-overlay {
-  position: absolute;
-  bottom: var(--menu-toggle-bottom, 0);
-  height: var(--menu-toggle-height, 30px);
-  width: 5px;
-  left: calc(var(--sidebar-width) - 5px);
-  background: var(--surface);
-  pointer-events: none; /* чтобы не мешать кликам */
+  /* убираем left: -5px, так как теперь она внутри message-actions */
+  /* оставляем только базовые стили кнопки */
+  width: auto;
+  min-width: 40px;
+  left:-5px;
 }
