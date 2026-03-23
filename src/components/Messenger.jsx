@@ -774,7 +774,7 @@ export function Messenger({ userId }) {
               <div className='row'>
                 <p><strong>{currentConversation.title}</strong></p>
                 <button onClick={clearChat} className="clear-chat-button" title="Удалить все свои сообщения в этом чате">
-                  🗑️ Очистить чат
+                  🗑️
                 </button>
               </div>
               <div className='row'>
