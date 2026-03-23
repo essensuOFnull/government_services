@@ -782,19 +782,26 @@ export function Messenger({ userId }) {
                   🗑️ Очистить чат
                 </button>
               </div>
-              {typingUsers.size > 0 && (
-                <div className="typing-indicator-header">
-                  {Array.from(typingUsers).map(id => {
-                    const u = users.get(id);
-                    return (u && (u.username || u.displayName || u.name)) || id;
-                  }).join(', ')} печатает...
-                </div>
-              )}
-              {uploadingUsers.size > 0 && (
-                <div className="uploading-indicator-header">
-                  Загружаются файлы: {Array.from(uploadingUsers.values()).join(', ')}
-                </div>
-              )}
+              
+              <div className="typing-indicator-header">
+                <span>Печатают: </span>
+                <span className='users-list-span'>
+                  {typingUsers.size > 0 && (
+                    Array.from(typingUsers).map(id => {
+                      const u = users.get(id);
+                      return (u && (u.username || u.displayName || u.name)) || id;
+                    }).join(', ')
+                  )}
+                </span>
+              </div>
+              <div className="uploading-indicator-header">
+                <span>Загружают файлы: </span>
+                <span className='users-list-span'>
+                  {uploadingUsers.size > 0 && (
+                    Array.from(uploadingUsers.values()).join(', ')
+                  )}
+                </span>
+              </div>
             </div>
 
             <div className="messages-list" ref={messageListRef}>

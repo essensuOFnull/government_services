@@ -165,3 +165,7 @@ button{
   min-width: 40px;
   left:-5px;
 }
+
+.users-list-span{
+  color:#f0f;
+}
