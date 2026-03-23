@@ -6,7 +6,7 @@ import Avatar from './Avatar';
 import UserSearch from './UserSearch';
 
 export function Messenger({ userId }) {
-  // ========== Состояния и рефы ==========
+  // ========== Оригинальные состояния ==========
   const [conversations, setConversations] = useState([]);
   const [currentConversation, setCurrentConversation] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -29,15 +29,17 @@ export function Messenger({ userId }) {
   const [unreadCounts, setUnreadCounts] = useState({});
   const wasAtBottomRef = useRef(true);
   const initialScrollDoneRef = useRef(false);
+
+  // ========== Новые состояния для sidebar ==========
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
 
-  // Рефы для элементов
+  // ========== Рефы для отслеживания размеров ==========
   const containerRef = useRef(null);
   const sidebarRef = useRef(null);
   const menuToggleRef = useRef(null);
-  const resizeObserverRef = useRef(null);
   const messageActionsRef = useRef(null);
+  const resizeObserverRef = useRef(null);
 
   // ========== Функция обновления CSS-переменных ==========
   const updateVariables = useCallback(() => {
@@ -58,7 +60,7 @@ export function Messenger({ userId }) {
     container.style.setProperty('--menu-toggle-height', `${toggleRect.height}px`);
   }, [isSidebarCollapsed]);
 
-  // ========== Колбэк-рефы для отслеживания появления элементов ==========
+  // ========== Колбэк-рефы ==========
   const handleSidebarRef = useCallback((node) => {
     if (sidebarRef.current === node) return;
     if (sidebarRef.current && resizeObserverRef.current) {
@@ -104,7 +106,7 @@ export function Messenger({ userId }) {
     }
   }, [updateVariables]);
 
-  // Очистка ResizeObserver при размонтировании
+  // ========== Очистка ResizeObserver при размонтировании ==========
   useEffect(() => {
     return () => {
       if (resizeObserverRef.current) {
@@ -113,12 +115,12 @@ export function Messenger({ userId }) {
     };
   }, []);
 
-  // Дополнительное обновление при изменении isSidebarCollapsed
+  // ========== Дополнительное обновление при изменении состояния схлопывания ==========
   useEffect(() => {
     updateVariables();
   }, [updateVariables]);
 
-  // ========== Обработчики анимации и схлопывания ==========
+  // ========== Обработчики sidebar ==========
   const toggleSidebar = () => {
     const newCollapsed = !isSidebarCollapsed;
     if (!newCollapsed) {
@@ -135,7 +137,7 @@ export function Messenger({ userId }) {
     }
   };
 
-  // ========== Остальные эффекты и логика (сохранены как в исходном коде) ==========
+  // ========== Остальная оригинальная логика ==========
   useEffect(() => {
     currentConversationRef.current = currentConversation;
   }, [currentConversation]);
@@ -180,7 +182,6 @@ export function Messenger({ userId }) {
     } catch (e) { console.error(e); }
   };
 
-  // WebSocket
   useEffect(() => {
     if (!userId) return;
 
@@ -195,15 +196,23 @@ export function Messenger({ userId }) {
       return;
     }
 
-    wsRef.current.addEventListener('open', () => console.log('✅ WebSocket подключен'));
+    wsRef.current.addEventListener('open', () => {
+      console.log('✅ WebSocket подключен');
+    });
+
     wsRef.current.addEventListener('message', (event) => {
       const message = JSON.parse(event.data);
       handleWebSocketMessage(message);
     });
-    wsRef.current.addEventListener('close', () => console.log('❌ WebSocket отключен'));
+
+    wsRef.current.addEventListener('close', () => {
+      console.log('❌ WebSocket отключен');
+    });
 
     return () => {
-      if (wsRef.current) wsRef.current.close();
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
     };
   }, [userId]);
 
@@ -212,20 +221,24 @@ export function Messenger({ userId }) {
 
     switch (type) {
       case 'forward_message':
-      case 'new_message':
-        const msg = data.message;
-        if (currentConversationRef.current && currentConversationRef.current.id === msg?.conversation_id) {
-          setMessages(prev => [...prev, msg]);
-          if (msg.file_ids?.length) {
-            const fileIdsToFetch = msg.file_ids.filter(fid => !fileMeta.has(fid));
-            if (fileIdsToFetch.length) {
+        console.log('forward_message received:', data.message);
+        if (currentConversationRef.current && currentConversationRef.current.id === data.message?.conversation_id) {
+          setMessages(prev => [...prev, data.message]);
+          if (data.message.file_ids && data.message.file_ids.length > 0) {
+            const fileIdsToFetch = new Set();
+            data.message.file_ids.forEach(fid => { 
+              if (!fileMeta.has(fid)) fileIdsToFetch.add(fid); 
+            });
+            if (fileIdsToFetch.size > 0) {
               (async () => {
                 const newMap = new Map(fileMeta);
                 for (const fid of fileIdsToFetch) {
                   try {
                     const resp = await fetch(`/api/messenger/file/${fid}`, { headers: { 'x-user-id': userId } });
                     const j = await resp.json();
-                    if (j.success && j.file) newMap.set(fid, j.file);
+                    if (j.success && j.file) {
+                      newMap.set(fid, j.file);
+                    }
                   } catch (e) { console.error('file meta fetch', e); }
                 }
                 setFileMeta(newMap);
@@ -233,22 +246,55 @@ export function Messenger({ userId }) {
             }
           }
         }
-        if (msg?.sender_id !== userId) {
-          const conversationId = msg.conversation_id;
+        if (data.message && data.message.sender_id && data.message.sender_username) {
+          setUsers(prev => new Map(prev).set(data.message.sender_id, {
+            id: data.message.sender_id,
+            username: data.message.sender_username
+          }));
+        }
+        if (data.message && data.message.sender_id !== userId) {
+          const conversationId = data.message.conversation_id;
           if (!currentConversation || currentConversation.id !== conversationId) {
-            setUnreadCounts(prev => ({ ...prev, [conversationId]: (prev[conversationId] || 0) + 1 }));
+            setUnreadCounts(prev => ({
+              ...prev,
+              [conversationId]: (prev[conversationId] || 0) + 1
+            }));
             playNotificationSound();
           }
         }
-        if (msg?.sender_id && msg?.sender_username) {
-          setUsers(prev => new Map(prev).set(msg.sender_id, { id: msg.sender_id, username: msg.sender_username }));
+        break;
+
+      case 'new_message':
+        console.log('new_message received:', data.message);
+        if (currentConversationRef.current && currentConversationRef.current.id === data.message?.conversation_id) {
+          setMessages(prev => [...prev, data.message]);
+        }
+        if (data.message && data.message.sender_id && data.message.sender_username) {
+          setUsers(prev => new Map(prev).set(data.message.sender_id, {
+            id: data.message.sender_id,
+            username: data.message.sender_username
+          }));
+        }
+        if (data.message && data.message.sender_id !== userId) {
+          const conversationId = data.message.conversation_id;
+          if (!currentConversation || currentConversation.id !== conversationId) {
+            setUnreadCounts(prev => ({
+              ...prev,
+              [conversationId]: (prev[conversationId] || 0) + 1
+            }));
+            playNotificationSound();
+          }
         }
         break;
 
       case 'user_typing':
         setTypingUsers(prev => new Set([...prev, data.userId]));
         if (data.username && data.userId) {
-          setUsers(prev => new Map(prev).set(data.userId, { id: data.userId, username: data.username }));
+          setUsers(prev => {
+            const updated = new Map(prev);
+            updated.set(data.userId, { id: data.userId, username: data.username });
+            return updated;
+          });
         }
         break;
 
@@ -289,26 +335,29 @@ export function Messenger({ userId }) {
         break;
 
       case 'message_read':
-        setMessages(prev => prev.map(m => m.id === data.messageId ? { ...m, readBy: [...(m.readBy || []), data.userId] } : m));
+        setMessages(prev => prev.map(m => 
+          m.id === data.messageId ? { ...m, readBy: [...(m.readBy || []), data.userId] } : m
+        ));
         break;
-
       case 'message_deleted':
+        console.log('message_deleted received:', data);
         if (currentConversationRef.current && data.conversationId === currentConversationRef.current.id) {
           setMessages(prev => prev.filter(m => m.id !== data.messageId));
         }
         break;
-
       case 'storage_info_updated':
+        console.log('storage_info_updated received:', data.storageInfo);
         setStorageInfo(data.storageInfo);
         break;
-
       case 'user_left_chat':
+        console.log('user_left_chat received:', data);
         if (currentConversationRef.current && currentConversationRef.current.id === data.conversationId) {
           setMessages(prev => prev.filter(m => m.sender_id !== data.userId));
         }
         break;
 
       case 'conversation_deleted':
+        console.log('conversation_deleted received:', data);
         setConversations(prev => prev.filter(c => c.id !== data.conversationId));
         if (currentConversationRef.current && currentConversationRef.current.id === data.conversationId) {
           setCurrentConversation(null);
@@ -316,44 +365,51 @@ export function Messenger({ userId }) {
         break;
 
       case 'chat_cleared_for_me':
+        console.log('chat_cleared_for_me received:', data);
         setConversations(prev => prev.filter(c => c.id !== data.conversationId));
         if (currentConversationRef.current && currentConversationRef.current.id === data.conversationId) {
           setCurrentConversation(null);
         }
         break;
-
+      case 'storage_info_updated':
+        setStorageInfo(data.storageInfo);
+        break;
       default:
         console.log('Неизвестный тип сообщения:', type);
     }
   }, [currentConversation, fileMeta, userId, playNotificationSound]);
 
-  // Получение хранилища
   useEffect(() => {
     const fetchStorageInfo = async () => {
       try {
-        const response = await fetch('/api/messenger/storage-info', { headers: { 'x-user-id': userId } });
+        const response = await fetch('/api/messenger/storage-info', {
+          headers: { 'x-user-id': userId }
+        });
         const data = await response.json();
         setStorageInfo(data);
       } catch (error) {
         console.error('Ошибка получения информации о хранилище:', error);
       }
     };
+
     fetchStorageInfo();
     const interval = setInterval(fetchStorageInfo, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [userId]);
 
-  // Получение разговоров
   useEffect(() => {
     const fetchConversations = async () => {
       try {
-        const response = await fetch('/api/messenger/conversations', { headers: { 'x-user-id': userId } });
+        const response = await fetch('/api/messenger/conversations', {
+          headers: { 'x-user-id': userId }
+        });
         const data = await response.json();
         setConversations(data.conversations || []);
       } catch (error) {
         console.error('Ошибка получения разговоров:', error);
       }
     };
+
     fetchConversations();
   }, [userId]);
 
@@ -369,7 +425,11 @@ export function Messenger({ userId }) {
       if (j.success && j.conversation) {
         const exists = conversations.some(c => c.id === j.conversation.id);
         if (!exists) {
-          const newConversation = { ...j.conversation, title: 'Избранное', otherParticipants: [] };
+          const newConversation = {
+            ...j.conversation,
+            title: 'Избранное',
+            otherParticipants: []
+          };
           setConversations([...conversations, newConversation]);
         }
         setCurrentConversation(j.conversation);
@@ -380,7 +440,6 @@ export function Messenger({ userId }) {
     } catch (e) { console.error(e); }
   };
 
-  // Получение сообщений при смене разговора
   useEffect(() => {
     if (!currentConversation) return;
 
@@ -411,7 +470,6 @@ export function Messenger({ userId }) {
     fetchMessages(pageSize, 0, false);
   }, [currentConversation, userId]);
 
-  // Сброс счётчика непрочитанных при открытии чата
   useEffect(() => {
     if (currentConversation) {
       setUnreadCounts(prev => {
@@ -422,7 +480,6 @@ export function Messenger({ userId }) {
     }
   }, [currentConversation]);
 
-  // Прокрутка в конец при загрузке сообщений
   useEffect(() => {
     if (!messageListRef.current || messages.length === 0) return;
     if (!initialScrollDoneRef.current) {
@@ -442,18 +499,22 @@ export function Messenger({ userId }) {
   useEffect(() => {
     const container = messageListRef.current;
     if (!container) return;
+
     const handleScroll = () => {
       const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 20;
       wasAtBottomRef.current = atBottom;
     };
+
     container.addEventListener('scroll', handleScroll);
     handleScroll();
+
     return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
   useEffect(() => {
     const container = messageListRef.current;
     if (!container) return;
+
     const handleScroll = async () => {
       if (container.scrollTop === 0 && hasMore && currentConversation) {
         try {
@@ -468,6 +529,7 @@ export function Messenger({ userId }) {
             setMessages(prev => [...msgs, ...prev]);
             setOffset(prev => prev + msgs.length);
             if (msgs.length < pageSize) setHasMore(false);
+
             requestAnimationFrame(() => {
               const newScrollHeight = container.scrollHeight;
               const delta = newScrollHeight - oldScrollHeight;
@@ -479,42 +541,53 @@ export function Messenger({ userId }) {
         } catch (e) { console.error(e); }
       }
     };
+
     container.addEventListener('scroll', handleScroll);
     return () => container.removeEventListener('scroll', handleScroll);
   }, [currentConversation, hasMore, offset, pageSize, userId]);
 
-  // Загрузка метаданных файлов
   useEffect(() => {
     const fileIdsToFetch = new Set();
     messages.forEach(m => {
       (m.file_ids || []).forEach(fid => { if (!fileMeta.has(fid)) fileIdsToFetch.add(fid); });
     });
     if (fileIdsToFetch.size === 0) return;
+
     (async () => {
       const newMap = new Map(fileMeta);
       for (const fid of fileIdsToFetch) {
         try {
           const resp = await fetch(`/api/messenger/file/${fid}`, { headers: { 'x-user-id': userId } });
           const j = await resp.json();
-          if (j.success && j.file) newMap.set(fid, j.file);
+          if (j.success && j.file) {
+            newMap.set(fid, j.file);
+          }
         } catch (e) { console.error('file meta fetch', e); }
       }
       setFileMeta(newMap);
     })();
   }, [messages]);
 
-  // Загрузка информации о пользователях из сообщений
   useEffect(() => {
     const userIds = new Set();
     messages.forEach(m => {
       if (m.sender_id) userIds.add(m.sender_id);
     });
     if (userIds.size === 0) return;
+
     userIds.forEach(senderId => {
       if (!users.has(senderId)) {
         const msg = messages.find(m => m.sender_id === senderId);
         if (msg && msg.sender_username) {
-          setUsers(prev => new Map(prev).set(senderId, { id: senderId, username: msg.sender_username, userId: msg.sender_userId || senderId }));
+          setUsers(prev => {
+            const updated = new Map(prev);
+            updated.set(senderId, { 
+              id: senderId, 
+              username: msg.sender_username,
+              userId: msg.sender_userId || senderId
+            });
+            return updated;
+          });
         }
       }
     });
@@ -523,14 +596,17 @@ export function Messenger({ userId }) {
   const handleSendMessage = async () => {
     if (!messageInput.trim() && attachments.length === 0) return;
     if (!currentConversation.id) return;
+
     const content = messageInput;
     setMessageInput('');
+
     let uploadedFileIds = [];
     if (attachments.length > 0) {
       try {
         const formData = new FormData();
         attachments.forEach(f => formData.append('files', f));
         formData.append('conversationId', currentConversation.id);
+
         const resp = await fetch('/api/messenger/upload-files', {
           method: 'POST',
           headers: { 'x-user-id': userId },
@@ -541,25 +617,39 @@ export function Messenger({ userId }) {
           uploadedFileIds = j.files.map(f => f.id);
           if (j.storageInfo) setStorageInfo(j.storageInfo);
         } else {
-          console.error('Ошибка загрузки вложений', j?.message);
+          console.error('Ошибка загрузки вложений', j && j.message);
         }
       } catch (e) {
         console.error('Ошибка при загрузке вложений', e);
       }
     }
+
     wsRef.current?.send(JSON.stringify({
       type: 'send_message',
-      data: { conversationId: currentConversation.id, content, fileIds: uploadedFileIds }
+      data: {
+        conversationId: currentConversation.id,
+        content,
+        fileIds: uploadedFileIds
+      }
     }));
+
     setAttachments([]);
   };
 
   const handleTyping = () => {
     if (!currentConversation.id) return;
-    wsRef.current?.send(JSON.stringify({ type: 'typing_start', data: { conversationId: currentConversation.id } }));
+
+    wsRef.current?.send(JSON.stringify({
+      type: 'typing_start',
+      data: { conversationId: currentConversation.id }
+    }));
+
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
-      wsRef.current?.send(JSON.stringify({ type: 'typing_stop', data: { conversationId: currentConversation.id } }));
+      wsRef.current?.send(JSON.stringify({
+        type: 'typing_stop',
+        data: { conversationId: currentConversation.id }
+      }));
     }, 3000);
   };
 
@@ -594,7 +684,6 @@ export function Messenger({ userId }) {
     return 'офлайн';
   };
 
-  // ========== Ранний return ==========
   if (!storageInfo) return null;
 
   const { quota, serverStatus } = storageInfo;
@@ -610,14 +699,19 @@ export function Messenger({ userId }) {
 
   const clearChat = async () => {
     if (!currentConversation) return;
+
     const confirmClear = window.confirm(
       'Вы уверены, что хотите удалить ВСЕ свои сообщения в этом чате и выйти из него?\nЭто действие необратимо, ваши сообщения и файлы будут удалены для всех.'
     );
     if (!confirmClear) return;
+
     try {
       const response = await fetch('/api/messenger/clear-chat', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': userId
+        },
         body: JSON.stringify({ conversationId: currentConversation.id })
       });
       const data = await response.json();
@@ -676,7 +770,7 @@ export function Messenger({ userId }) {
             );
           })}
         </div>
-        <div className='crutch-overlay'></div>
+        <div className="crutch-overlay"></div>
       </div>
 
       <div className="messenger-main">
@@ -688,7 +782,7 @@ export function Messenger({ userId }) {
               <div className="progress-indicator segmented">
                 <span className="progress-indicator-bar" style={{ width: `${Math.min(percentage, 100)}%` }} />
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', flexDirection: 'row' }}>
+              <div style={{display:'flex',justifyContent:'space-between',flexDirection:'row'}}>
                 <p className="storage-percentage">Занято {percentage}%</p>
                 <button onClick={clearChat} className="clear-chat-button" title="Удалить все свои сообщения в этом чате">
                   🗑️ Очистить чат
@@ -722,7 +816,10 @@ export function Messenger({ userId }) {
               ))}
             </div>
 
-            <div className="window message-input-area field-row-stacked" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
+            <div className="window message-input-area field-row-stacked" 
+                 ref={handleMessageActionsRef}
+                 onDragOver={(e) => e.preventDefault()} 
+                 onDrop={handleDrop}>
               {attachments.length > 0 && (
                 <div className="attachments-list">
                   {attachments.map((f, idx) => (
@@ -747,12 +844,17 @@ export function Messenger({ userId }) {
                 }}
                 placeholder="Введите сообщение..."
               />
-              <div className="message-actions" ref={handleMessageActionsRef}>
+              <div className="message-actions">
                 <button className="menu-toggle" onClick={toggleSidebar} ref={handleMenuToggleRef}>☰</button>
                 <button>
                   <label>
                     📎
-                    <input type="file" multiple onChange={handleFileUpload} hidden />
+                    <input
+                      type="file"
+                      multiple
+                      onChange={handleFileUpload}
+                      hidden
+                    />
                   </label>
                 </button>
                 <button onClick={handleSendMessage}>Отправить</button>
