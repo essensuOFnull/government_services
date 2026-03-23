@@ -6,14 +6,15 @@ import { WindowsProvider, useWindowsManager } from '../hooks/useWindowsManager';
 import AuthorizationWindow from './auth/AuthorizationWindow';
 import ProfileWindow from './auth/ProfileWindow';
 import MenuWindow from './MenuWindow';
-import { loadWallpaper, applyWallpaper } from '../utils/wallpaperUtils';
+import { loadWallpaper, applyWallpaper, loadWallpaperMode } from '../utils/wallpaperUtils';
 
 function MainApp() {
   /*применяем фон рабочего стола*/
   useEffect(() => {
     const wallpaper = loadWallpaper();
+    const mode = loadWallpaperMode();
     if (wallpaper) {
-      applyWallpaper(wallpaper.type, wallpaper.url);
+      applyWallpaper(wallpaper.type, wallpaper.url, mode);
     }
   }, []);
   /**/
