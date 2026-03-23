@@ -169,3 +169,12 @@ button{
 .users-list-span{
   color:#f0f;
 }
+.row{
+  display:flex;
+  flex-direction:row;
+  flex-wrap:wrap;
+  justify-content: space-between;
+}
+.row *{
+  display:inline-block;
+}

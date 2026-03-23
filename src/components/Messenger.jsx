@@ -771,16 +771,18 @@ export function Messenger({ userId }) {
         {currentConversation ? (
           <>
             <div className="window messenger-header">
-              <p><strong>{currentConversation.title}</strong></p>
-              <p>{storageInfo.message}</p>
-              <div className="progress-indicator segmented">
-                <span className="progress-indicator-bar" style={{ width: `${Math.min(percentage, 100)}%` }} />
-              </div>
-              <div style={{display:'flex',justifyContent:'space-between',flexDirection:'row'}}>
-                <p className="storage-percentage">Занято {percentage}%</p>
+              <div className='row'>
+                <p><strong>{currentConversation.title}</strong></p>
                 <button onClick={clearChat} className="clear-chat-button" title="Удалить все свои сообщения в этом чате">
                   🗑️ Очистить чат
                 </button>
+              </div>
+              <div className='row'>
+                <p>{storageInfo.message}</p>
+                <p className="storage-percentage">Занято {percentage}%</p>
+              </div>
+              <div className="progress-indicator segmented">
+                <span className="progress-indicator-bar" style={{ width: `${Math.min(percentage, 100)}%` }} />
               </div>
               
               <div className="typing-indicator-header">
