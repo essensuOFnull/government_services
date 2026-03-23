@@ -6,8 +6,17 @@ import { WindowsProvider, useWindowsManager } from '../hooks/useWindowsManager';
 import AuthorizationWindow from './auth/AuthorizationWindow';
 import ProfileWindow from './auth/ProfileWindow';
 import MenuWindow from './MenuWindow';
+import { loadWallpaper, applyWallpaper } from '../utils/wallpaperUtils';
 
 function MainApp() {
+  /*применяем фон рабочего стола*/
+  useEffect(() => {
+    const wallpaper = loadWallpaper();
+    if (wallpaper) {
+      applyWallpaper(wallpaper.type, wallpaper.url);
+    }
+  }, []);
+  /**/
   const { user, loading, isAuthenticated } = useAuthContext();
   const { windows, openWindow, closeWindow, updateWindow, bringToFront, minimizeWindow } = useWindowsManager();
   // Автоматическое открытие окна входа при загрузке

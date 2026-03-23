@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useWindowsManager } from '../hooks/useWindowsManager';
 import { useAuthContext } from './auth/AuthContext';
 import FileViewer from './FileViewer';
+import { saveWallpaper, applyWallpaper } from '../utils/wallpaperUtils';
+
 export default function FileItem({ fileId, fileMeta = {} }) {
   const { openWindow, closeWindow } = useWindowsManager();
   const { user } = useAuthContext();
@@ -58,6 +60,53 @@ export default function FileItem({ fileId, fileMeta = {} }) {
       title: fileMeta.original_filename || filename,
       children: <FileViewer fileId={fileId} fileMeta={fileMeta} />,
     });
+  };
+
+  // Установка обоев
+  const setWallpaper = (url, type) => {
+    // Удаляем предыдущий контейнер обоев
+    const existing = document.getElementById('wallpaper-container');
+    if (existing) existing.remove();
+
+    const container = document.createElement('div');
+    container.id = 'wallpaper-container';
+    container.style.position = 'fixed';
+    container.style.top = '0';
+    container.style.left = '0';
+    container.style.width = '100%';
+    container.style.height = '100%';
+    container.style.zIndex = '-1';
+    container.style.pointerEvents = 'none'; // не мешать кликам
+
+    if (type === 'image') {
+      container.style.backgroundImage = `url(${url})`;
+      container.style.backgroundSize = 'cover';
+      container.style.backgroundPosition = 'center';
+      container.style.backgroundRepeat = 'no-repeat';
+    } else if (type === 'video') {
+      const video = document.createElement('video');
+      video.src = url;
+      video.autoplay = true;
+      video.loop = true;
+      video.muted = true;
+      video.playsInline = true;
+      video.style.width = '100%';
+      video.style.height = '100%';
+      video.style.objectFit = 'cover';
+      container.appendChild(video);
+    }
+
+    document.body.appendChild(container);
+  };
+
+  const handleSetWallpaper = () => {
+    if (isImage && previewUrl) {
+      saveWallpaper('image', previewUrl);
+      applyWallpaper('image', previewUrl);
+    } else if (isVideo && previewUrl) {
+      saveWallpaper('video', previewUrl);
+      applyWallpaper('video', previewUrl);
+    }
   };
 
   useEffect(() => {
@@ -134,6 +183,11 @@ export default function FileItem({ fileId, fileMeta = {} }) {
         {(!isText) && (
           <button onClick={handleOpen} className="open-btn">
             👁️
+          </button>
+        )}
+        {(isImage || isVideo) && previewUrl && (
+          <button onClick={handleSetWallpaper} className="wallpaper-btn">
+            🖼️
           </button>
         )}
       </div>
