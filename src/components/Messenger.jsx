@@ -27,6 +27,29 @@ export function Messenger({ userId }) {
 
   const currentConversationRef = useRef(currentConversation);
 
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarHidden, setIsSidebarHidden] = useState(false); // true – полностью скрыть (margin/padding/border = 0)
+
+  const toggleSidebar = () => {
+    const newCollapsed = !isSidebarCollapsed;
+    setIsSidebarCollapsed(newCollapsed);
+    if (!newCollapsed) {
+      // При открытии сразу убираем класс, скрывающий отступы,
+      // чтобы панель снова заняла своё место
+      setIsSidebarHidden(false);
+    }
+    // При закрытии скрывающие стили применим только после анимации
+  };
+
+  const handleTransitionEnd = (e) => {
+    if (e.propertyName === 'left') { // проверяем, что анимация именно left
+      if (isSidebarCollapsed) {
+        // Если панель свёрнута, теперь можно безопасно обнулить отступы
+        setIsSidebarHidden(true);
+      }
+    }
+  };
+
   useEffect(() => {
     currentConversationRef.current = currentConversation;
   }, [currentConversation]);
@@ -117,6 +140,27 @@ export function Messenger({ userId }) {
       }
     };
   }, [userId]);
+
+  const sidebarRef = useRef(null);
+
+  useEffect(() => {
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+
+    const updatePosition = () => {
+      const width = sidebar.offsetWidth;
+      const container = sidebar.closest('.messenger-container');
+      if (container) {
+        container.style.setProperty('--sidebar-width', `${width}px`);
+      }
+    };
+
+    const resizeObserver = new ResizeObserver(updatePosition);
+    resizeObserver.observe(sidebar);
+    updatePosition(); // установить начальное значение
+
+    return () => resizeObserver.disconnect();
+  }, []);
 
   const handleWebSocketMessage = useCallback((message) => {
     const { type, ...data } = message;
@@ -659,8 +703,11 @@ export function Messenger({ userId }) {
   };
 
   return (
-    <div className="messenger-container">
-      <div className="window messenger-sidebar">
+    <div className={`messenger-container ${isSidebarCollapsed?'sidebar-collapsed':''}`}>
+      <div
+        className={`window messenger-sidebar`}
+        ref={sidebarRef}
+        onTransitionEnd={handleTransitionEnd}>
         <p><strong>Разговоры</strong></p>
         <div style={{ display: 'flex', gap: 8, flexDirection: 'column' }}>
           <button onClick={openFavorites}>Избранное</button>
@@ -696,8 +743,8 @@ export function Messenger({ userId }) {
             );
           })}
         </div>
+        <div className='crutch-overlay'></div>
       </div>
-
       <div className="messenger-main">
         {currentConversation ? (
           <>
@@ -768,6 +815,7 @@ export function Messenger({ userId }) {
                 placeholder="Введите сообщение..."
               />
               <div className="message-actions">
+                <button className="menu-toggle" onClick={toggleSidebar}>☰</button>
                 <button>
                   <label>
                     📎

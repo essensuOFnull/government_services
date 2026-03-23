@@ -1,16 +1,33 @@
 .messenger-container {
+  position: relative;
   display: flex;
   height: 100%;
-  overflow:hidden;
+  overflow-x: hidden;
+  --menu-toggle-width:50px;
 }
 
 .messenger-sidebar {
+  left:0;
+  top:0;
+  bottom:0;
+  height:auto;
+  position:absolute;
   width: fit-content;
-  max-width:25%;
   display: flex;
   flex-direction: column;
   overflow: auto;
-  resize:horizontal;
+  transition:left 0.2s ease;
+}
+
+.messenger-sidebar.hidden {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  overflow: hidden !important;
+}
+
+.sidebar-collapsed .messenger-sidebar{
+  left:-100%;
 }
 
 .conversations-list {
@@ -32,10 +49,16 @@
 }
 
 .messenger-main {
+  margin-left:var(--sidebar-width);
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: margin-left 0.2s ease;
+}
+
+.sidebar-collapsed .messenger-main{
+  margin-left:0;
 }
 
 .storage-warning {
@@ -93,7 +116,14 @@
 
 .message-actions {
   display: flex;
-  gap: 8px;
+  flex-direction:row;
+  flex-wrap:wrap;
+  justify-content:space-between;
+  gap:8px;
+}
+.message-actions *{
+  height:25px;
+  margin:0 !important;
 }
 button{
   cursor: pointer;
@@ -123,4 +153,25 @@ button{
 .message-files {
   max-width: 100%;
   overflow: hidden;
+}
+
+.menu-toggle {
+  position: relative;
+  left:-5px;
+  border-radius: 0 8px 8px 0;  /* скругление справа */
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width:var(--menu-toggle-width);
+  min-width:0;
+}
+
+.crutch-overlay{
+  position:absolute;
+  bottom:4px;
+  height:22px;
+  width:5px;
+  left:calc(var(--sidebar-width) - 5px);
+  background:var(--surface);
 }
