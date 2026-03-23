@@ -157,21 +157,23 @@ button{
 
 .menu-toggle {
   position: relative;
-  left:-5px;
-  border-radius: 0 8px 8px 0;  /* скругление справа */
+  left: -5px; /* по желанию */
+  border-radius: 0 8px 8px 0;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  width:var(--menu-toggle-width);
-  min-width:0;
+  width: var(--menu-toggle-width, 40px);
+  min-width: 0;
+  z-index: 1000;
 }
 
-.crutch-overlay{
-  position:absolute;
-  bottom:4px;
-  height:22px;
-  width:5px;
-  left:calc(var(--sidebar-width) - 5px);
-  background:var(--surface);
+.crutch-overlay {
+  position: absolute;
+  bottom: var(--menu-toggle-bottom, 0);
+  height: var(--menu-toggle-height, 30px);
+  width: 5px;
+  left: calc(var(--sidebar-width) - 5px);
+  background: var(--surface);
+  pointer-events: none; /* чтобы не мешать кликам */
 }
