@@ -337,38 +337,48 @@ export default function MenuWindow({ userId }) {
           <fieldset>
             <legend>Рабочий стол</legend>
             <div>Режим отображения обоев:</div>
-            <label>
-              <input
-                type="radio"
-                name="wallpaperMode"
-                value="cover"
-                checked={wallpaperMode === 'cover'}
-                onChange={() => handleModeChange('cover')}
-              />
-              Покрыть экран с обрезкой (cover)
-            </label>
+			<br/>
+			<div class="field-row">
+				<input
+					id="radio_cover"
+					type="radio"
+					name="wallpaperMode"
+					value="cover"
+					checked={wallpaperMode === 'cover'}
+					onChange={() => handleModeChange('cover')}
+				/>
+				<label for="radio_cover">
+					Покрыть экран с обрезкой (cover)
+				</label>
+			</div>
             <br />
-            <label>
-              <input
-                type="radio"
-                name="wallpaperMode"
-                value="contain"
-                checked={wallpaperMode === 'contain'}
-                onChange={() => handleModeChange('contain')}
-              />
-              Вписать целиком с сохранением пропорций (contain)
-            </label>
+			<div class="field-row">
+				<input
+					id="radio_contain"
+					type="radio"
+					name="wallpaperMode"
+					value="contain"
+					checked={wallpaperMode === 'contain'}
+					onChange={() => handleModeChange('contain')}
+				/>
+				<label for="radio_contain">
+					Вписать целиком с сохранением пропорций (contain)
+				</label>
+			</div>
             <br />
-            <label>
-              <input
-                type="radio"
-                name="wallpaperMode"
-                value="stretch"
-                checked={wallpaperMode === 'stretch'}
-                onChange={() => handleModeChange('stretch')}
-              />
-              Растянуть с искажением (stretch)
-            </label>
+			<div class="field-row">
+				<input
+					id="radio_stretch"
+					type="radio"
+					name="wallpaperMode"
+					value="stretch"
+					checked={wallpaperMode === 'stretch'}
+					onChange={() => handleModeChange('stretch')}
+				/>
+				<label for="radio_stretch">
+					Растянуть с искажением (stretch)
+				</label>
+			</div>
             <br />
             <button onClick={handleClearWallpaper} style={{ marginTop: '12px' }}>
               Удалить обои
