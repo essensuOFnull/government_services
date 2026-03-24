@@ -4,7 +4,16 @@ import Avatar from './Avatar';
 import { useAuthContext } from './auth/AuthContext';
 import ForwardButton from './forward/ForwardButton';
 
-export default function Message({ msg, fileMeta = new Map(), users = new Map(), onDelete, wsRef  }) {
+export default function Message({
+  msg,
+  fileMeta = new Map(),
+  users = new Map(),
+  onDelete,
+  wsRef,
+  cacheEnabled,
+  getCachedFile,
+  saveToCache
+}) {
   const files = msg.file_ids || [];
   const { user } = useAuthContext();
 
@@ -12,12 +21,11 @@ export default function Message({ msg, fileMeta = new Map(), users = new Map(), 
     try {
       const d = new Date(val);
       return d.toLocaleString('ru-RU');
-    } catch (e) { 
-      return '' + val; 
+    } catch (e) {
+      return '' + val;
     }
   };
 
-  // Парсинг @username и рендер как ссылки
   const renderContentWithMentions = (content) => {
     if (!content) return null;
     const parts = content.split(/(@[a-zA-Z0-9_]+)/g);
@@ -31,8 +39,8 @@ export default function Message({ msg, fileMeta = new Map(), users = new Map(), 
             className="mention-link"
             onClick={e => {
               e.preventDefault();
-              window.dispatchEvent(new CustomEvent('openUserProfile', { 
-                detail: { username } 
+              window.dispatchEvent(new CustomEvent('openUserProfile', {
+                detail: { username }
               }));
             }}
           >
@@ -44,34 +52,37 @@ export default function Message({ msg, fileMeta = new Map(), users = new Map(), 
     });
   };
 
-  const senderId = msg.sender_id || msg.senderId || msg.user_id || 
-                  (msg.sender && msg.sender.id) || null;
+  const senderId = msg.sender_id || msg.senderId || msg.user_id ||
+    (msg.sender && msg.sender.id) || null;
   const senderFromMap = senderId ? users.get(senderId) : null;
-  
-  const senderName = (msg.sender_username && 
-                     msg.sender_username !== 'online:' && 
-                     msg.sender_username !== 'null')
-    ? msg.sender_username
-    : (senderFromMap && (senderFromMap.username || 
-                        senderFromMap.displayName || 
-                        senderFromMap.name))
-      || (msg.sender && (msg.sender.username || msg.sender.name))
-      || (senderId ? `пользователь #${senderId.substring(0, 8)}` : 
-          'Неизвестный пользователь');
 
-  const isCurrentUser = user && 
-                       (user.id === senderId || 
-                        user.username === msg.sender_username);
+  const senderName = (msg.sender_username &&
+    msg.sender_username !== 'online:' &&
+    msg.sender_username !== 'null')
+    ? msg.sender_username
+    : (senderFromMap && (senderFromMap.username ||
+      senderFromMap.displayName ||
+      senderFromMap.name))
+    || (msg.sender && (msg.sender.username || msg.sender.name))
+    || (senderId ? `пользователь #${senderId.substring(0, 8)}` :
+      'Неизвестный пользователь');
+
+  const isCurrentUser = user &&
+    (user.id === senderId ||
+      user.username === msg.sender_username);
 
   return (
     <>
-      <hr style={{width:'100%'}}/>
-      <div className={`message${isCurrentUser?' self':''}`}>
+      <hr style={{ width: '100%' }} />
+      <div className={`message${isCurrentUser ? ' self' : ''}`}>
         <div style={{ display: 'flex', gap: '12px', marginBottom: '8px' }}>
-          <Avatar 
+          <Avatar
             userId={senderId}
             username={senderName}
             size={32}
+            cacheEnabled={cacheEnabled}
+            getCachedFile={getCachedFile}
+            saveToCache={saveToCache}
           />
           <div style={{ flex: 1 }}>
             <strong>{senderName}</strong>
@@ -84,32 +95,36 @@ export default function Message({ msg, fileMeta = new Map(), users = new Map(), 
         {files.length > 0 && (
           <div className="message-files">
             {files.map(fileId => (
-              <FileItem 
-                key={fileId} 
-                fileId={fileId} 
-                fileMeta={fileMeta.get(fileId) || {}} 
+              <FileItem
+                key={fileId}
+                fileId={fileId}
+                fileMeta={fileMeta.get(fileId) || {}}
+                userId={user?.id}
+                cacheEnabled={cacheEnabled}
+                getCachedFile={getCachedFile}
+                saveToCache={saveToCache}
               />
             ))}
           </div>
         )}
-        <div style={{display:'flex',flexDirection:'column'}}>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="message-controls">
             {isCurrentUser && (
-              <button 
+              <button
                 onClick={async () => {
-                  if (!confirm('Удалить сообщение? Это действие нельзя отменить.')) 
+                  if (!confirm('Удалить сообщение? Это действие нельзя отменить.'))
                     return;
                   try {
                     const resp = await fetch(
-                      `/api/messenger/delete-message/${msg.id}`, 
-                      { 
-                        method: 'DELETE', 
-                        headers: { 'x-user-id': user.id } 
+                      `/api/messenger/delete-message/${msg.id}`,
+                      {
+                        method: 'DELETE',
+                        headers: { 'x-user-id': user.id }
                       }
                     );
                     const j = await resp.json();
                     if (resp.ok && j.success) {
-                      if (typeof onDelete === 'function') 
+                      if (typeof onDelete === 'function')
                         onDelete(msg.id, j.storageInfo);
                     } else {
                       alert(j.message || 'Не удалось удалить сообщение');
@@ -122,9 +137,9 @@ export default function Message({ msg, fileMeta = new Map(), users = new Map(), 
               >🗑️
               </button>
             )}
-            <ForwardButton msg={msg} wsRef={wsRef}/>
+            <ForwardButton msg={msg} wsRef={wsRef} />
           </div>
-          <div style={{display:'flex',flexDirection:'row',justifyContent:'flex-end'}}>
+          <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'flex-end' }}>
             <small>{formatTime(msg.created_at)}</small>
           </div>
         </div>

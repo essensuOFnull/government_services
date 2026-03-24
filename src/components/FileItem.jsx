@@ -4,10 +4,17 @@ import { useAuthContext } from './auth/AuthContext';
 import FileViewer from './FileViewer';
 import { saveWallpaper, applyWallpaper } from '../utils/wallpaperUtils';
 
-export default function FileItem({ fileId, fileMeta = {} }) {
+export default function FileItem({
+  fileId,
+  fileMeta = {},
+  cacheEnabled,
+  getCachedFile,
+  saveToCache,
+  userId: propUserId
+}) {
   const { openWindow, closeWindow } = useWindowsManager();
   const { user } = useAuthContext();
-  const userId = user?.id;
+  const userId = propUserId || user?.id;
   const [previewUrl, setPreviewUrl] = useState(null);
 
   const mime = fileMeta.mime_type || '';
@@ -19,52 +26,119 @@ export default function FileItem({ fileId, fileMeta = {} }) {
   const isAudio = mime.startsWith('audio/');
   const isText = mime.startsWith('text/') || mime === 'application/json';
 
-  const handleDownload = () => {
-    // Fetch file with authentication header and trigger download
+  // Загрузка файла (для скачивания или предпросмотра)
+  const loadFile = async (url, key) => {
+    if (cacheEnabled && getCachedFile) {
+      const cachedUrl = await getCachedFile(key);
+      if (cachedUrl) return cachedUrl;
+    }
+
+    const response = await fetch(url, { headers: { 'x-user-id': userId } });
+    if (!response.ok) throw new Error('Failed to fetch file');
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+
+    if (cacheEnabled && saveToCache) {
+      await saveToCache(key, blob);
+    }
+
+    return objectUrl;
+  };
+
+  // Предпросмотр
+  useEffect(() => {
+    let active = true;
+    let token = null;
+    if (!(isImage || isVideo || isAudio) || !userId) return undefined;
+
     (async () => {
+      const key = `preview_${fileId}`;
       try {
+        if (cacheEnabled && getCachedFile) {
+          const cachedUrl = await getCachedFile(key);
+          if (cachedUrl && active) {
+            setPreviewUrl(cachedUrl);
+            return;
+          }
+        }
+
+        const tokenResp = await fetch(`/api/messenger/preview-token/${fileId}`, {
+          method: 'POST',
+          headers: { 'x-user-id': userId }
+        });
+        const j = await tokenResp.json();
+        if (!tokenResp.ok || !j.success || !j.token) {
+          console.error('Failed to get preview token', j);
+          return;
+        }
+        token = j.token;
+        const url = `/api/messenger/preview/${fileId}?token=${encodeURIComponent(token)}`;
+        const blob = await fetch(url, { headers: { 'x-user-id': userId } }).then(r => r.blob());
+        const objectUrl = URL.createObjectURL(blob);
+        if (active) setPreviewUrl(objectUrl);
+
+        if (cacheEnabled && saveToCache) {
+          await saveToCache(key, blob);
+        }
+      } catch (err) {
+        console.error('Preview error', err);
+      }
+    })();
+
+    return () => {
+      active = false;
+      setPreviewUrl(null);
+      if (token) {
+        fetch(`/api/messenger/preview-release/${encodeURIComponent(token)}`, {
+          method: 'POST',
+          headers: { 'x-user-id': userId }
+        }).catch(() => {});
+      }
+    };
+  }, [fileId, userId, isImage, isVideo, isAudio, cacheEnabled, getCachedFile, saveToCache]);
+
+  const handleDownload = async () => {
+    try {
+      const key = `file_${fileId}`;
+      let url = null;
+
+      if (cacheEnabled && getCachedFile) {
+        url = await getCachedFile(key);
+      }
+
+      if (!url) {
         const resp = await fetch(s3url, { headers: { 'x-user-id': userId } });
         if (!resp.ok) throw new Error('Download failed');
         const blob = await resp.blob();
-        // Попробуем получить корректное имя из заголовка Content-Disposition (с поддержкой filename*)
-        let suggestedName = filename;
-        try {
-          const cd = resp.headers.get('content-disposition') || '';
-          const mStar = /filename\*=(?:UTF-8'')?([^;\n\r]+)/i.exec(cd);
-          if (mStar && mStar[1]) {
-            suggestedName = decodeURIComponent(mStar[1].trim());
-          } else {
-            const m = /filename=\"([^\"]+)\"/i.exec(cd);
-            if (m && m[1]) suggestedName = m[1];
-          }
-        } catch (e) { /* ignore */ }
-
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = suggestedName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      } catch (e) {
-        console.error('Download error', e);
-        alert('Не удалось скачать файл');
+        url = URL.createObjectURL(blob);
+        if (cacheEnabled && saveToCache) {
+          await saveToCache(key, blob);
+        }
       }
-    })();
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      if (url.startsWith('blob:')) {
+        setTimeout(() => URL.revokeObjectURL(url), 100);
+      }
+    } catch (e) {
+      console.error('Download error', e);
+      alert('Не удалось скачать файл');
+    }
   };
 
   const handleOpen = () => {
-    // Open file in custom inner window using FileViewer (no extra buttons)
     openWindow({
       title: fileMeta.original_filename || filename,
       children: <FileViewer fileId={fileId} fileMeta={fileMeta} />,
     });
   };
 
-  // Установка обоев
   const setWallpaper = (url, type) => {
-    // Удаляем предыдущий контейнер обоев
     const existing = document.getElementById('wallpaper-container');
     if (existing) existing.remove();
 
@@ -76,7 +150,7 @@ export default function FileItem({ fileId, fileMeta = {} }) {
     container.style.width = '100%';
     container.style.height = '100%';
     container.style.zIndex = '-1';
-    container.style.pointerEvents = 'none'; // не мешать кликам
+    container.style.pointerEvents = 'none';
 
     if (type === 'image') {
       container.style.backgroundImage = `url(${url})`;
@@ -108,42 +182,6 @@ export default function FileItem({ fileId, fileMeta = {} }) {
       applyWallpaper('video', previewUrl);
     }
   };
-
-  useEffect(() => {
-    let active = true;
-    let token = null;
-    if (!(isImage || isVideo || isAudio) || !userId) return undefined;
-
-    (async () => {
-      try {
-        const tokenResp = await fetch(`/api/messenger/preview-token/${fileId}`, {
-          method: 'POST',
-          headers: { 'x-user-id': userId }
-        });
-        const j = await tokenResp.json();
-        if (!tokenResp.ok || !j.success || !j.token) {
-          console.error('Failed to get preview token', j);
-          return;
-        }
-        token = j.token;
-        const url = `/api/messenger/preview/${fileId}?token=${encodeURIComponent(token)}`;
-        if (active) setPreviewUrl(url);
-      } catch (err) {
-        console.error('Preview token error', err);
-      }
-    })();
-
-    return () => {
-      active = false;
-      setPreviewUrl(null);
-      if (token) {
-        fetch(`/api/messenger/preview-release/${encodeURIComponent(token)}`, {
-          method: 'POST',
-          headers: { 'x-user-id': userId }
-        }).catch(() => {});
-      }
-    };
-  }, [fileId, userId, isImage, isVideo, isAudio]);
 
   return (
     <div className="file-item">

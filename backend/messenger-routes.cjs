@@ -7,6 +7,11 @@ const path = require('path');
 
 const router = express.Router();
 
+const https = require('https');
+const httpsAgent = new https.Agent({
+  rejectUnauthorized: false   // отключаем проверку для самоподписанного сертификата
+});
+
 // Импорт Sequelize моделей
 const {
   User,
@@ -301,14 +306,11 @@ router.get('/download-file/:fileId', authenticateUser, async (req, res) => {
       });
     }
 
-    // Проверяем доступ к файлу
+    // Проверка доступа
     let hasAccess = false;
-
-    // Проверка 1: пользователь отправил файл
     if (file.uploader_id === req.user.id) {
       hasAccess = true;
     } else {
-      // Проверка 2: пользователь участник разговора с этим файлом
       const messagesWithFile = await sequelize.query(
         `SELECT DISTINCT m.conversation_id 
          FROM messages m 
@@ -316,7 +318,6 @@ router.get('/download-file/:fileId', authenticateUser, async (req, res) => {
          WHERE fr.file_id = ?`,
         { replacements: [fileId], type: sequelize.QueryTypes.SELECT }
       );
-
       if (messagesWithFile.length > 0) {
         for (const msg of messagesWithFile) {
           const conversation = await Conversation.findByPk(msg.conversation_id, {
@@ -341,42 +342,17 @@ router.get('/download-file/:fileId', authenticateUser, async (req, res) => {
       });
     }
 
-    // Получаем S3 URL напрямую
-    const s3Url = s3Service.getS3Url(file.s3_key);
+    // Скачиваем во временный файл
+    const tempPath = path.join(uploadsDir, `temp-${fileId}`);
+    await s3Service.downloadFile(file.s3_key, tempPath);
 
-    // Перенаправляем на S3 с правильным именем файла
-    const fallbackName = (file.original_filename || file.id).replace(/"/g, '');
-    const filenameStar = `UTF-8''${encodeURIComponent(fallbackName)}`;
-    res.set('Content-Disposition', `attachment; filename="${fallbackName}"; filename*=${filenameStar}`);
-    res.set('Content-Type', file.mime_type || 'application/octet-stream');
-    
-    // Используем S3 URL для скачивания
-    try {
-      const response = await fetch(s3Url);
-      if (!response.ok) {
-        throw new Error(`S3 returned ${response.status}`);
-      }
-      response.body.pipe(res);
-    } catch (fetchErr) {
-      console.error('Ошибка скачивания из S3:', fetchErr);
-      // Fallback
-      const tempPath = path.join(uploadsDir, `temp-${fileId}`);
-      try {
-        await s3Service.downloadFile(file.s3_key, tempPath);
-        res.download(tempPath, file.original_filename, (err) => {
-          if (err) console.error('Ошибка скачивания:', err);
-          fs.unlink(tempPath, (unlinkErr) => {
-            if (unlinkErr) console.error('Ошибка удаления временного файла:', unlinkErr);
-          });
-        });
-      } catch (dlErr) {
-        console.error('Ошибка при загрузке файла:', dlErr);
-        res.status(500).json({
-          success: false,
-          message: 'Не удалось загрузить файл'
-        });
-      }
-    }
+    // Отдаём файл на скачивание
+    res.download(tempPath, file.original_filename, (err) => {
+      if (err) console.error('Ошибка скачивания:', err);
+      fs.unlink(tempPath, (unlinkErr) => {
+        if (unlinkErr) console.error('Ошибка удаления временного файла:', unlinkErr);
+      });
+    });
   } catch (error) {
     console.error('Ошибка при скачивании:', error);
     res.status(500).json({
@@ -497,45 +473,53 @@ router.get('/preview/:fileId', async (req, res) => {
     const { fileId } = req.params;
     const token = req.query.token;
     if (!token) return res.status(400).json({ success: false, message: 'Token required' });
+
     const record = previewTokens.get(token);
     if (!record || record.fileId !== fileId || record.expiresAt <= Date.now()) {
       return res.status(403).json({ success: false, message: 'Invalid or expired token' });
     }
-    
+
     const file = await File.findByPk(fileId);
     if (!file) return res.status(404).json({ success: false, message: 'File not found' });
 
-    const s3Url = s3Service.getS3Url(file.s3_key);
+    // Скачиваем во временный файл
+    const tempPath = path.join(uploadsDir, `temp-preview-${fileId}`);
+    await s3Service.downloadFile(file.s3_key, tempPath);
 
-    const rangeHeader = req.headers.range;
-    const fetchOptions = {};
-    if (rangeHeader) fetchOptions.headers = { Range: rangeHeader };
+    const range = req.headers.range;
+    const stat = fs.statSync(tempPath);
+    const fileSize = stat.size;
 
-    try {
-      const response = await fetch(s3Url, fetchOptions);
-      if (!response.ok) throw new Error(`S3 returned ${response.status}`);
+    if (range) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunksize = (end - start) + 1;
+      const readStream = fs.createReadStream(tempPath, { start, end });
 
-      const ct = response.headers.get('content-type');
-      if (ct) res.set('Content-Type', ct);
-      const cr = response.headers.get('content-range');
-      if (cr) res.set('Content-Range', cr);
-      const ar = response.headers.get('accept-ranges') || 'bytes';
-      res.set('Accept-Ranges', ar);
-      const cl = response.headers.get('content-length');
-      if (cl) res.set('Content-Length', cl);
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunksize,
+        'Content-Type': file.mime_type,
+      });
 
-      res.status(response.status);
-      response.body.pipe(res);
-    } catch (fetchErr) {
-      console.error('Preview fetch error:', fetchErr);
-      const tempPath = path.join(uploadsDir, `temp-preview-${fileId}`);
-      try {
-        await s3Service.downloadFile(file.s3_key, tempPath);
-        res.sendFile(tempPath, () => { fs.unlink(tempPath, () => {}); });
-      } catch (dlErr) {
-        console.error('Preview fallback error:', dlErr);
-        res.status(500).json({ success: false, message: 'Не удалось получить предпросмотр' });
-      }
+      readStream.pipe(res);
+      readStream.on('end', () => {
+        fs.unlink(tempPath, (err) => {
+          if (err) console.error('Ошибка удаления временного файла:', err);
+        });
+      });
+    } else {
+      res.setHeader('Content-Type', file.mime_type);
+      res.setHeader('Accept-Ranges', 'bytes');
+      const readStream = fs.createReadStream(tempPath);
+      readStream.pipe(res);
+      readStream.on('end', () => {
+        fs.unlink(tempPath, (err) => {
+          if (err) console.error('Ошибка удаления временного файла:', err);
+        });
+      });
     }
   } catch (err) {
     console.error('preview error', err);

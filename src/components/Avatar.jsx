@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-export default function Avatar({ 
-  userId, 
-  username, 
-  size = 40, 
+export default function Avatar({
+  userId,
+  username,
+  size = 40,
   style = {},
-  cacheEnabled,      // флаг, включено ли кэширование
-  getCachedFile,     // функция получения файла из кэша (возвращает URL или null)
-  saveToCache        // функция сохранения файла в кэш
+  cacheEnabled,
+  getCachedFile,
+  saveToCache
 }) {
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [loaded, setLoaded] = useState(false);
@@ -18,11 +18,9 @@ export default function Avatar({
     if (!userId) return;
 
     const loadAvatar = async () => {
-      // Отменяем предыдущий запрос
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-      // Освобождаем старый URL, если он был
       if (urlRef.current) {
         URL.revokeObjectURL(urlRef.current);
         urlRef.current = null;
@@ -34,13 +32,14 @@ export default function Avatar({
       const key = `avatar_${userId}`;
 
       try {
-        // 1. Проверяем кэш, если включен
+        // 1. Пытаемся получить из кэша
         if (cacheEnabled && getCachedFile) {
           const cachedUrl = await getCachedFile(key);
           if (cachedUrl) {
             urlRef.current = cachedUrl;
             setAvatarUrl(cachedUrl);
             setLoaded(true);
+            console.log('Avatar loaded from cache:', key);
             return;
           }
         }
@@ -54,7 +53,6 @@ export default function Avatar({
 
         if (!response.ok) {
           if (response.status === 404) {
-            // Аватарки нет, показываем инициалы
             setLoaded(false);
           } else {
             throw new Error(`HTTP ${response.status}`);
@@ -67,15 +65,15 @@ export default function Avatar({
         urlRef.current = url;
         setAvatarUrl(url);
         setLoaded(true);
+        console.log('Avatar loaded from server:', key);
 
-        // Сохраняем в кэш, если включен
+        // 3. Сохраняем в кэш
         if (cacheEnabled && saveToCache) {
           await saveToCache(key, blob);
+          console.log('Avatar saved to cache:', key);
         }
       } catch (error) {
-        if (error.name === 'AbortError') {
-          console.log('Avatar fetch aborted');
-        } else {
+        if (error.name !== 'AbortError') {
           console.error('Ошибка загрузки аватарки:', error);
           setLoaded(false);
         }
@@ -96,7 +94,7 @@ export default function Avatar({
   }, [userId, cacheEnabled, getCachedFile, saveToCache]);
 
   const initials = username ? username.charAt(0).toUpperCase() : '?';
-  
+
   const getColorFromUserId = (id) => {
     let hash = 0;
     for (let i = 0; i < id.length; i++) {

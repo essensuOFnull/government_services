@@ -34,8 +34,7 @@ export function Messenger({ userId }) {
   // Состояния кэширования
   const [cacheEnabled, setCacheEnabled] = useState(false);
   const [cacheRoot, setCacheRoot] = useState(null);
-  const [cacheInitialized, setCacheInitialized] = useState(false);
-  const cacheReadyRef = useRef(false);
+  const [isCacheReady, setIsCacheReady] = useState(false); // новый флаг
   // ========== Новые состояния для sidebar ==========
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -99,59 +98,53 @@ export function Messenger({ userId }) {
   // Инициализация кэша при монтировании
   useEffect(() => {
     const initCache = async () => {
-      // Проверяем, было ли уже дано разрешение
-      const permissionGranted = localStorage.getItem('messenger_cache_permission') === 'granted';
-      if (!permissionGranted) {
-        // Спрашиваем пользователя
-        const wantCache = window.confirm(
-          'Мессенджер будет работать лучше, а также будет меньше нагрузка на сервера, ' +
-          'если вы разрешите кэширование. Разрешить?'
-        );
-        if (!wantCache) {
-          setCacheEnabled(false);
-          setCacheInitialized(true);
-          localStorage.setItem('messenger_cache_permission', 'denied');
+      if (!window.showDirectoryPicker) {
+        console.warn('File System Access API not supported');
+        setCacheEnabled(false);
+        setIsCacheReady(true);
+        return;
+      }
+
+      try {
+        // Пытаемся восстановить handle из IndexedDB
+        const savedHandle = await getDirectoryHandle();
+        if (savedHandle) {
+          // Проверяем доступность
+          await savedHandle.getFileHandle('.test', { create: true });
+          setCacheRoot(savedHandle);
+          setCacheEnabled(true);
+          console.log('Cache restored from IndexedDB');
+          setIsCacheReady(true);
           return;
         }
-        alert('Выберите папку, в которую будет производиться кэширование.');
-        try {
-          // Открываем диалог выбора папки
-          const dirHandle = await window.showDirectoryPicker();
-          // Сохраняем handle в IndexedDB (для восстановления при перезагрузке)
-          await saveDirectoryHandle(dirHandle);
-          setCacheRoot(dirHandle);
-          setCacheEnabled(true);
-          localStorage.setItem('messenger_cache_permission', 'granted');
-        } catch (err) {
-          console.error('Ошибка выбора папки:', err);
-          setCacheEnabled(false);
-          localStorage.setItem('messenger_cache_permission', 'denied');
-        }
-      } else {
-        // Разрешение уже было – пытаемся восстановить handle из IndexedDB
-        try {
-          const dirHandle = await getDirectoryHandle();
-          if (dirHandle) {
-            // Проверяем, доступна ли папка (попытка создать тестовый файл)
-            await dirHandle.getFileHandle('.test', { create: true });
-            setCacheRoot(dirHandle);
-            setCacheEnabled(true);
-          } else {
-            // Если handle не восстановлен, запрашиваем заново
-            alert('Не удалось восстановить доступ к папке кэша. Выберите папку заново.');
-            const newDirHandle = await window.showDirectoryPicker();
-            await saveDirectoryHandle(newDirHandle);
-            setCacheRoot(newDirHandle);
-            setCacheEnabled(true);
-            localStorage.setItem('messenger_cache_permission', 'granted');
-          }
-        } catch (err) {
-          console.error('Ошибка восстановления кэша:', err);
-          setCacheEnabled(false);
-          localStorage.setItem('messenger_cache_permission', 'denied');
-        }
+      } catch (err) {
+        console.error('Failed to restore cache handle:', err);
       }
-      setCacheInitialized(true);
+
+      // Спрашиваем пользователя
+      const wantCache = window.confirm(
+        'Мессенджер будет работать лучше, а также будет меньше нагрузка на сервера, если вы разрешите кэширование. Разрешить?'
+      );
+      if (!wantCache) {
+        setCacheEnabled(false);
+        setIsCacheReady(true);
+        localStorage.setItem('messenger_cache_permission', 'denied');
+        return;
+      }
+
+      alert('Выберите папку, в которую будет производиться кэширование.');
+      try {
+        const dirHandle = await window.showDirectoryPicker();
+        await saveDirectoryHandle(dirHandle);
+        setCacheRoot(dirHandle);
+        setCacheEnabled(true);
+        localStorage.setItem('messenger_cache_permission', 'granted');
+      } catch (err) {
+        console.error('Ошибка выбора папки:', err);
+        setCacheEnabled(false);
+        localStorage.setItem('messenger_cache_permission', 'denied');
+      }
+      setIsCacheReady(true);
     };
     initCache();
   }, []);
@@ -937,6 +930,10 @@ export function Messenger({ userId }) {
                   users={users}
                   onDelete={removeMessageFromList}
                   wsRef={wsRef}
+                  userId={userId}
+                  cacheEnabled={cacheEnabled}
+                  getCachedFile={getCachedFile}
+                  saveToCache={saveToCache}
                 />
               ))}
             </div>
