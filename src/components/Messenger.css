@@ -147,7 +147,7 @@ button{
 }
 .file-audio {
   max-width: 100%;
-  width:100%;
+  min-width: 100%;
   display: block;
 }
 .message-files {
