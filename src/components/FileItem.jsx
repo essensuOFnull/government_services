@@ -57,7 +57,7 @@ export default function FileItem({
     });
   };
 
-  // Загрузка превью
+  // Загрузка превью (с прогрессом)
   useEffect(() => {
     let active = true;
     if (!(isImage || isVideo || isAudio) || !userId) return;
@@ -113,7 +113,7 @@ export default function FileItem({
     };
   }, [fileId, userId, isImage, isVideo, isAudio, cacheEnabled, getCachedFile, saveToCache]);
 
-  // Скачивание файла (также с прогрессом, опционально)
+  // Скачивание файла (также с прогрессом)
   const handleDownload = async () => {
     try {
       const key = `file_${fileId}`;
@@ -147,77 +147,6 @@ export default function FileItem({
       setDownloadProgress(null);
     }
   };
-
-  // Загрузка файла (для скачивания или предпросмотра)
-  const loadFile = async (url, key) => {
-    if (cacheEnabled && getCachedFile) {
-      const cachedUrl = await getCachedFile(key);
-      if (cachedUrl) return cachedUrl;
-    }
-
-    const response = await fetch(url, { headers: { 'x-user-id': userId } });
-    if (!response.ok) throw new Error('Failed to fetch file');
-    const blob = await response.blob();
-    const objectUrl = URL.createObjectURL(blob);
-
-    if (cacheEnabled && saveToCache) {
-      await saveToCache(key, blob);
-    }
-
-    return objectUrl;
-  };
-
-  // Предпросмотр
-  useEffect(() => {
-    let active = true;
-    let token = null;
-    if (!(isImage || isVideo || isAudio) || !userId) return undefined;
-
-    (async () => {
-      const key = `preview_${fileId}`;
-      try {
-        if (cacheEnabled && getCachedFile) {
-          const cachedUrl = await getCachedFile(key);
-          if (cachedUrl && active) {
-            setPreviewUrl(cachedUrl);
-            return;
-          }
-        }
-
-        const tokenResp = await fetch(`/api/messenger/preview-token/${fileId}`, {
-          method: 'POST',
-          headers: { 'x-user-id': userId }
-        });
-        const j = await tokenResp.json();
-        if (!tokenResp.ok || !j.success || !j.token) {
-          console.error('Failed to get preview token', j);
-          return;
-        }
-        token = j.token;
-        const url = `/api/messenger/preview/${fileId}?token=${encodeURIComponent(token)}`;
-        const blob = await fetch(url, { headers: { 'x-user-id': userId } }).then(r => r.blob());
-        const objectUrl = URL.createObjectURL(blob);
-        if (active) setPreviewUrl(objectUrl);
-
-        if (cacheEnabled && saveToCache) {
-          await saveToCache(key, blob);
-        }
-      } catch (err) {
-        console.error('Preview error', err);
-      }
-    })();
-
-    return () => {
-      active = false;
-      setPreviewUrl(null);
-      if (token) {
-        fetch(`/api/messenger/preview-release/${encodeURIComponent(token)}`, {
-          method: 'POST',
-          headers: { 'x-user-id': userId }
-        }).catch(() => {});
-      }
-    };
-  }, [fileId, userId, isImage, isVideo, isAudio, cacheEnabled, getCachedFile, saveToCache]);
 
   const handleOpen = () => {
     openWindow({
