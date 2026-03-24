@@ -84,7 +84,7 @@ export default function Message({
           <Avatar
             userId={senderId}
             username={senderName}
-            size={32}
+            size={64}
             cacheEnabled={cacheEnabled}
             getCachedFile={getCachedFile}
             saveToCache={saveToCache}
