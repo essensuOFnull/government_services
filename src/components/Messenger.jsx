@@ -765,21 +765,23 @@ export function Messenger({ userId }) {
     }
   }, [currentConversation]);
 
+  // Вместо useEffect с зависимостью [messages] для начальной прокрутки:
   useEffect(() => {
-    if (!messageListRef.current || messages.length === 0) return;
+    if (!messageListRef.current || allMessages.length === 0) return;
     if (!initialScrollDoneRef.current) {
       messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
       initialScrollDoneRef.current = true;
       wasAtBottomRef.current = true;
     }
-  }, [messages]);
+  }, [allMessages]); // была зависимость [messages]
 
+  // И для прокрутки при новых сообщениях, если пользователь был внизу:
   useEffect(() => {
-    if (!messageListRef.current || messages.length === 0) return;
+    if (!messageListRef.current || allMessages.length === 0) return;
     if (wasAtBottomRef.current) {
       messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [allMessages]); // была зависимость [messages]
 
   useEffect(() => {
     const container = messageListRef.current;
