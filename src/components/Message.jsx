@@ -28,47 +28,28 @@ export default function Message({
 
   const renderContentWithMentions = (content) => {
     if (!content) return null;
-    
-    // Разделяем текст на части: обычный текст и упоминания
     const parts = content.split(/(@[a-zA-Z0-9_]+)/g);
-    const result = [];
-
-    parts.forEach((part, idx) => {
-      // Если часть — упоминание
+    return parts.map((part, idx) => {
       if (/^@[a-zA-Z0-9_]+$/.test(part)) {
         const username = part.slice(1);
-        result.push(
+        return (
           <a
-            key={`mention-${idx}`}
+            key={idx}
             href="#"
             className="mention-link"
-            onClick={(e) => {
+            onClick={e => {
               e.preventDefault();
-              window.dispatchEvent(
-                new CustomEvent('openUserProfile', {
-                  detail: { username },
-                })
-              );
+              window.dispatchEvent(new CustomEvent('openUserProfile', {
+                detail: { username }
+              }));
             }}
           >
             {part}
           </a>
         );
-      } 
-      // Если это обычный текст (может содержать \n)
-      else if (part) {
-        const lines = part.split('\n');
-        lines.forEach((line, lineIdx) => {
-          // Вставляем <br /> между строками (кроме первой)
-          if (lineIdx > 0) {
-            result.push(<br key={`br-${idx}-${lineIdx}`} />);
-          }
-          result.push(line); // строка как текст, React экранирует её автоматически
-        });
       }
+      return part;
     });
-
-    return result;
   };
 
   const senderId = msg.sender_id || msg.senderId || msg.user_id ||

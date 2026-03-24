@@ -177,3 +177,7 @@ button{
 .row *{
   display:inline-block;
 }
+
+.message-content {
+  white-space: pre-wrap; /* сохраняет пробелы и переносы строк */
+}
