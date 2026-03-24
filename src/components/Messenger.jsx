@@ -49,6 +49,11 @@ export function Messenger({ userId }) {
   const resizeObserverRef = useRef(null);
 
   const [pendingMessages, setPendingMessages] = useState([]);
+  const pendingMessagesRef = useRef(pendingMessages);
+
+  useEffect(() => {
+    pendingMessagesRef.current = pendingMessages;
+  }, [pendingMessages]);
 
   const updatePendingMessage = useCallback((localId, updater) => {
     setPendingMessages(prev =>
@@ -536,29 +541,32 @@ export function Messenger({ userId }) {
       case 'new_message':
         const msg = data.message;
         if (msg.temporaryId) {
-            setPendingMessages(prev => {
-                const idx = prev.findIndex(p => p.localId === msg.temporaryId);
-                if (idx !== -1) {
-                    const newPending = prev.filter(p => p.localId !== msg.temporaryId);
-                    setMessages(prevMessages => [...prevMessages, msg]);
-                    return newPending;
-                }
-                return prev;
-            });
+          const exists = pendingMessagesRef.current.some(p => p.localId === msg.temporaryId);
+          if (exists) {
+            // Это сообщение отправителя: удаляем из pending и добавляем реальное
+            setPendingMessages(prev => prev.filter(p => p.localId !== msg.temporaryId));
+            setMessages(prev => [...prev, msg]);
+          } else {
+            // Это сообщение для получателя: добавляем как обычное
+            if (currentConversationRef.current && currentConversationRef.current.id === msg?.conversation_id) {
+              setMessages(prev => [...prev, msg]);
+            }
+          }
         } else {
-          // Обычная логика добавления сообщения
+          // Обычное сообщение без temporaryId
           if (currentConversationRef.current && currentConversationRef.current.id === msg?.conversation_id) {
             setMessages(prev => [...prev, msg]);
           }
         }
-        if (data.message && data.message.sender_id && data.message.sender_username) {
-          setUsers(prev => new Map(prev).set(data.message.sender_id, {
-            id: data.message.sender_id,
-            username: data.message.sender_username
+        // Обновление пользователей, уведомления и звук – без изменений
+        if (msg && msg.sender_id && msg.sender_username) {
+          setUsers(prev => new Map(prev).set(msg.sender_id, {
+            id: msg.sender_id,
+            username: msg.sender_username
           }));
         }
-        if (data.message && data.message.sender_id !== userId) {
-          const conversationId = data.message.conversation_id;
+        if (msg && msg.sender_id !== userId) {
+          const conversationId = msg.conversation_id;
           if (!currentConversation || currentConversation.id !== conversationId) {
             setUnreadCounts(prev => ({
               ...prev,
