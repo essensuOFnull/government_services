@@ -116,17 +116,23 @@ export default function FileItem({
   // Скачивание файла (также с прогрессом)
   const handleDownload = async () => {
     try {
-      const key = `file_${fileId}`;
       let url = null;
+      const fileKey = `file_${fileId}`;
+      const previewKey = `preview_${fileId}`;
 
       if (cacheEnabled && getCachedFile) {
-        url = await getCachedFile(key);
+        // Сначала ищем полный файл
+        url = await getCachedFile(fileKey);
+        // Если нет, пробуем превью (если оно есть и это тот же файл)
+        if (!url) {
+          url = await getCachedFile(previewKey);
+        }
       }
 
       if (!url) {
         setIsDownloading(true);
         setDownloadProgress(0);
-        url = await loadFileWithProgress(s3url, key, (progress) => {
+        url = await loadFileWithProgress(s3url, fileKey, (progress) => {
           setDownloadProgress(progress);
         });
       }
