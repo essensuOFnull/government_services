@@ -66,6 +66,150 @@ export function Messenger({ userId }) {
     }));
     return [...real, ...pending].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   }, [messages, pendingMessages]);
+  // ========== Новая функция отправки сообщения (общая логика) ==========
+  const sendMessageInternal = async (content, filesToUpload, customLocalId = null) => {
+    if (!content.trim() && filesToUpload.length === 0) return;
+    if (!currentConversation.id) return;
+
+    const localId = customLocalId || (Date.now() + '-' + Math.random().toString(36).substr(2, 8));
+
+    // Создаём временное сообщение
+    const newPending = {
+      localId,
+      content,
+      conversation_id: currentConversation.id,
+      sender_id: userId,
+      sender_username: user?.username || userId,
+      created_at: new Date().toISOString(),
+      file_ids: [],
+      files: filesToUpload.map(file => ({ file, progress: 0, id: null })),
+      progress: {
+        text: 0,
+        files: filesToUpload.reduce((acc, _, idx) => ({ ...acc, [idx]: 0 }), {}),
+      },
+      status: 'uploading_files',
+      error: null,
+    };
+    setPendingMessages(prev => [...prev, newPending]);
+
+    // Функция загрузки одного файла (осталась без изменений)
+    const uploadFile = (file, index) => {
+      return new Promise((resolve, reject) => {
+        const formData = new FormData();
+        formData.append('files', file);
+        formData.append('conversationId', currentConversation.id);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/messenger/upload-files', true);
+        xhr.setRequestHeader('x-user-id', userId);
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const percent = (e.loaded / e.total) * 100;
+            updatePendingMessage(localId, msg => ({
+              ...msg,
+              progress: {
+                ...msg.progress,
+                files: { ...msg.progress.files, [index]: percent },
+              },
+            }));
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            try {
+              const j = JSON.parse(xhr.responseText);
+              if (j.success && j.files && j.files[0]) {
+                resolve(j.files[0].id);
+              } else {
+                reject(new Error(j.message || 'Upload failed'));
+              }
+            } catch (e) {
+              reject(e);
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Network error'));
+        xhr.send(formData);
+      });
+    };
+
+    try {
+      // Загружаем все файлы параллельно
+      const uploadedIds = await Promise.all(
+        filesToUpload.map((file, idx) => uploadFile(file, idx))
+      );
+
+      // Обновляем прогресс текста (сразу 100%) и сохраняем ID файлов
+      updatePendingMessage(localId, msg => ({
+        ...msg,
+        progress: { ...msg.progress, text: 100 },
+        file_ids: uploadedIds,
+        files: msg.files.map((f, idx) => ({ ...f, id: uploadedIds[idx] })),
+        status: 'awaiting_confirm',
+      }));
+
+      // Отправляем сообщение через WebSocket с временным ID
+      wsRef.current?.send(JSON.stringify({
+        type: 'send_message',
+        data: {
+          conversationId: currentConversation.id,
+          content,
+          fileIds: uploadedIds,
+          temporaryId: localId,
+        },
+      }));
+
+      // Таймаут на случай, если ответ не придёт
+      setTimeout(() => {
+        updatePendingMessage(localId, msg => {
+          if (msg.status === 'awaiting_confirm') {
+            return { ...msg, status: 'error', error: 'Не удалось отправить сообщение' };
+          }
+          return msg;
+        });
+      }, 10000);
+    } catch (err) {
+      console.error('Upload error:', err);
+      updatePendingMessage(localId, msg => ({
+        ...msg,
+        status: 'error',
+        error: err.message,
+      }));
+    }
+  };
+
+  // Переработанный handleSendMessage
+  const handleSendMessage = async () => {
+    const content = messageInput;
+    const filesToUpload = [...attachments];
+    if (!content.trim() && filesToUpload.length === 0) return;
+
+    // Очищаем поле ввода и вложения
+    setMessageInput('');
+    setAttachments([]);
+
+    await sendMessageInternal(content, filesToUpload);
+  };
+
+  // handleRetry для повторной отправки
+  const handleRetry = (localId) => {
+    const pendingMsg = pendingMessages.find(p => p.localId === localId);
+    if (!pendingMsg) return;
+
+    const content = pendingMsg.content;
+    const filesToUpload = pendingMsg.files.map(f => f.file); // оригинальные File объекты
+
+    // Удаляем текущее pending сообщение
+    setPendingMessages(prev => prev.filter(p => p.localId !== localId));
+
+    // Повторяем отправку
+    sendMessageInternal(content, filesToUpload);
+  };
 
   async function saveDirectoryHandle(handle) {
     await set('messenger_cache_handle', handle);
@@ -737,128 +881,6 @@ export function Messenger({ userId }) {
     });
   }, [messages, users]);
 
-  const handleSendMessage = async () => {
-    if (!messageInput.trim() && attachments.length === 0) return;
-    if (!currentConversation.id) return;
-
-    const content = messageInput;
-    const localId = Date.now() + '-' + Math.random().toString(36).substr(2, 8);
-    const filesToUpload = [...attachments]; // сохраняем копию
-
-    // Очищаем поле ввода и вложения сразу для UX
-    setMessageInput('');
-    setAttachments([]);
-
-    // Создаём временное сообщение
-    const newPending = {
-      localId,
-      content,
-      conversation_id: currentConversation.id,
-      sender_id: userId,
-      sender_username: user?.username || userId, // нужно передать user из контекста
-      created_at: new Date().toISOString(),
-      file_ids: [],
-      files: filesToUpload.map(file => ({ file, progress: 0, id: null })),
-      progress: {
-        text: 0,
-        files: filesToUpload.reduce((acc, _, idx) => ({ ...acc, [idx]: 0 }), {}),
-      },
-      status: 'uploading_files', // 'uploading_files', 'awaiting_confirm', 'error'
-      error: null,
-    };
-    setPendingMessages(prev => [...prev, newPending]);
-
-    // Функция загрузки одного файла с прогрессом
-    const uploadFile = (file, index) => {
-      return new Promise((resolve, reject) => {
-        const formData = new FormData();
-        formData.append('files', file);
-        formData.append('conversationId', currentConversation.id);
-
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/messenger/upload-files', true);
-        xhr.setRequestHeader('x-user-id', userId);
-
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            const percent = (e.loaded / e.total) * 100;
-            updatePendingMessage(localId, msg => ({
-              ...msg,
-              progress: {
-                ...msg.progress,
-                files: { ...msg.progress.files, [index]: percent },
-              },
-            }));
-          }
-        };
-
-        xhr.onload = () => {
-          if (xhr.status === 200) {
-            try {
-              const j = JSON.parse(xhr.responseText);
-              if (j.success && j.files && j.files[0]) {
-                resolve(j.files[0].id);
-              } else {
-                reject(new Error(j.message || 'Upload failed'));
-              }
-            } catch (e) {
-              reject(e);
-            }
-          } else {
-            reject(new Error(`HTTP ${xhr.status}`));
-          }
-        };
-
-        xhr.onerror = () => reject(new Error('Network error'));
-        xhr.send(formData);
-      });
-    };
-
-    try {
-      // Загружаем все файлы параллельно
-      const uploadedIds = await Promise.all(
-        filesToUpload.map((file, idx) => uploadFile(file, idx))
-      );
-
-      // Обновляем прогресс текста (сразу 100%) и сохраняем ID файлов
-      updatePendingMessage(localId, msg => ({
-        ...msg,
-        progress: { ...msg.progress, text: 100 },
-        file_ids: uploadedIds,
-        files: msg.files.map((f, idx) => ({ ...f, id: uploadedIds[idx] })),
-        status: 'awaiting_confirm',
-      }));
-
-      // Отправляем сообщение через WebSocket с временным ID
-      wsRef.current?.send(JSON.stringify({
-        type: 'send_message',
-        data: {
-          conversationId: currentConversation.id,
-          content,
-          fileIds: uploadedIds,
-          temporaryId: localId,
-        },
-      }));
-
-      // Таймаут на случай, если ответ не придёт
-      setTimeout(() => {
-        updatePendingMessage(localId, msg => {
-          if (msg.status === 'awaiting_confirm') {
-            return { ...msg, status: 'error', error: 'Не удалось отправить сообщение' };
-          }
-          return msg;
-        });
-      }, 10000);
-    } catch (err) {
-      console.error('Upload error:', err);
-      updatePendingMessage(localId, msg => ({
-        ...msg,
-        status: 'error',
-        error: err.message,
-      }));
-    }
-  };
-
   const handleTyping = () => {
     if (!currentConversation.id) return;
 
@@ -1054,7 +1076,7 @@ export function Messenger({ userId }) {
                   progress={msg.progress}
                   pendingFiles={msg.files}
                   status={msg.status}
-                  onRetry={() => handleRetry(msg.localId)} // нужно реализовать
+                  onRetry={() => handleRetry(msg.localId)}
                 />
               ))}
             </div>
