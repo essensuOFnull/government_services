@@ -1,53 +1,102 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
-export default function Avatar({ userId, username, size = 40, style = {} }) {
+export default function Avatar({ 
+  userId, 
+  username, 
+  size = 40, 
+  style = {},
+  cacheEnabled,      // флаг, включено ли кэширование
+  getCachedFile,     // функция получения файла из кэша (возвращает URL или null)
+  saveToCache        // функция сохранения файла в кэш
+}) {
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  const urlRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
   useEffect(() => {
     if (!userId) return;
 
-    setLoaded(false);
-    const img = new Image();
-    
-    const handleLoad = () => {
-      setLoaded(true);
-    };
+    const loadAvatar = async () => {
+      // Отменяем предыдущий запрос
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      // Освобождаем старый URL, если он был
+      if (urlRef.current) {
+        URL.revokeObjectURL(urlRef.current);
+        urlRef.current = null;
+      }
 
-    const handleError = () => {
       setLoaded(false);
       setAvatarUrl(null);
+
+      const key = `avatar_${userId}`;
+
+      try {
+        // 1. Проверяем кэш, если включен
+        if (cacheEnabled && getCachedFile) {
+          const cachedUrl = await getCachedFile(key);
+          if (cachedUrl) {
+            urlRef.current = cachedUrl;
+            setAvatarUrl(cachedUrl);
+            setLoaded(true);
+            return;
+          }
+        }
+
+        // 2. Загружаем с сервера
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        const response = await fetch(`/api/messenger/avatar/${encodeURIComponent(userId)}`, {
+          signal: controller.signal
+        });
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            // Аватарки нет, показываем инициалы
+            setLoaded(false);
+          } else {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          return;
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        urlRef.current = url;
+        setAvatarUrl(url);
+        setLoaded(true);
+
+        // Сохраняем в кэш, если включен
+        if (cacheEnabled && saveToCache) {
+          await saveToCache(key, blob);
+        }
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          console.log('Avatar fetch aborted');
+        } else {
+          console.error('Ошибка загрузки аватарки:', error);
+          setLoaded(false);
+        }
+      }
     };
 
-    img.onload = handleLoad;
-    img.onerror = handleError;
-
-    // Генерируем URL с версией для кеша
-    const url = `/api/messenger/avatar/${encodeURIComponent(userId)}?t=${Date.now()}`;
-    img.src = url;
-    
-    // Устанавливаем URL только если изображение загрузилось
-    // (это позволит показать fallback если 404)
-    const timer = setTimeout(() => {
-      if (img.complete && img.naturalHeight === 0) {
-        // Изображение не загрузилось
-        setLoaded(false);
-      } else if (img.complete) {
-        // Изображение загрузилось
-        setAvatarUrl(url);
-      }
-    }, 100);
+    loadAvatar();
 
     return () => {
-      clearTimeout(timer);
-      img.onload = null;
-      img.onerror = null;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      if (urlRef.current) {
+        URL.revokeObjectURL(urlRef.current);
+        urlRef.current = null;
+      }
     };
-  }, [userId]);
+  }, [userId, cacheEnabled, getCachedFile, saveToCache]);
 
   const initials = username ? username.charAt(0).toUpperCase() : '?';
   
-  // Генерируем цвет на основе userId
   const getColorFromUserId = (id) => {
     let hash = 0;
     for (let i = 0; i < id.length; i++) {

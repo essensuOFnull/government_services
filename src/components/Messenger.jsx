@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { get, set } from 'idb-keyval';
 import './Messenger.css';
 
 import Message from './Message';
@@ -30,6 +31,11 @@ export function Messenger({ userId }) {
   const wasAtBottomRef = useRef(true);
   const initialScrollDoneRef = useRef(false);
 
+  // Состояния кэширования
+  const [cacheEnabled, setCacheEnabled] = useState(false);
+  const [cacheRoot, setCacheRoot] = useState(null);
+  const [cacheInitialized, setCacheInitialized] = useState(false);
+  const cacheReadyRef = useRef(false);
   // ========== Новые состояния для sidebar ==========
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -39,6 +45,116 @@ export function Messenger({ userId }) {
   const menuToggleRef = useRef(null);
   const messageActionsRef = useRef(null);
   const resizeObserverRef = useRef(null);
+
+  async function saveDirectoryHandle(handle) {
+    await set('messenger_cache_handle', handle);
+  }
+
+  async function getDirectoryHandle() {
+    return await get('messenger_cache_handle');
+  }
+
+  // Получить ключ файла (уникальный идентификатор)
+  const getCacheKey = (fileId, extension = '') => {
+    // Используем fileId, для аватарок можно добавить префикс 'avatar_'
+    return `${fileId}${extension}`;
+  };
+
+  // Проверить наличие файла в кэше и вернуть blob URL
+  const getCachedFile = useCallback(async (key) => {
+    if (!cacheRoot || !cacheEnabled) return null;
+    try {
+      const fileHandle = await cacheRoot.getFileHandle(key);
+      const file = await fileHandle.getFile();
+      return URL.createObjectURL(file);
+    } catch (err) {
+      // Файл не найден или ошибка доступа
+      return null;
+    }
+  }, [cacheRoot, cacheEnabled]);
+
+  // Сохранить файл в кэш
+  const saveToCache = useCallback(async (key, blob) => {
+    if (!cacheRoot || !cacheEnabled) return;
+    try {
+      const fileHandle = await cacheRoot.getFileHandle(key, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+    } catch (err) {
+      console.error('Ошибка сохранения в кэш:', err);
+    }
+  }, [cacheRoot, cacheEnabled]);
+
+  // Удалить файл из кэша (при удалении сообщения)
+  const deleteFromCache = useCallback(async (key) => {
+    if (!cacheRoot || !cacheEnabled) return;
+    try {
+      await cacheRoot.removeEntry(key);
+    } catch (err) {
+      console.error('Ошибка удаления из кэша:', err);
+    }
+  }, [cacheRoot, cacheEnabled]);
+
+  // Инициализация кэша при монтировании
+  useEffect(() => {
+    const initCache = async () => {
+      // Проверяем, было ли уже дано разрешение
+      const permissionGranted = localStorage.getItem('messenger_cache_permission') === 'granted';
+      if (!permissionGranted) {
+        // Спрашиваем пользователя
+        const wantCache = window.confirm(
+          'Мессенджер будет работать лучше, а также будет меньше нагрузка на сервера, ' +
+          'если вы разрешите кэширование. Разрешить?'
+        );
+        if (!wantCache) {
+          setCacheEnabled(false);
+          setCacheInitialized(true);
+          localStorage.setItem('messenger_cache_permission', 'denied');
+          return;
+        }
+        alert('Выберите папку, в которую будет производиться кэширование.');
+        try {
+          // Открываем диалог выбора папки
+          const dirHandle = await window.showDirectoryPicker();
+          // Сохраняем handle в IndexedDB (для восстановления при перезагрузке)
+          await saveDirectoryHandle(dirHandle);
+          setCacheRoot(dirHandle);
+          setCacheEnabled(true);
+          localStorage.setItem('messenger_cache_permission', 'granted');
+        } catch (err) {
+          console.error('Ошибка выбора папки:', err);
+          setCacheEnabled(false);
+          localStorage.setItem('messenger_cache_permission', 'denied');
+        }
+      } else {
+        // Разрешение уже было – пытаемся восстановить handle из IndexedDB
+        try {
+          const dirHandle = await getDirectoryHandle();
+          if (dirHandle) {
+            // Проверяем, доступна ли папка (попытка создать тестовый файл)
+            await dirHandle.getFileHandle('.test', { create: true });
+            setCacheRoot(dirHandle);
+            setCacheEnabled(true);
+          } else {
+            // Если handle не восстановлен, запрашиваем заново
+            alert('Не удалось восстановить доступ к папке кэша. Выберите папку заново.');
+            const newDirHandle = await window.showDirectoryPicker();
+            await saveDirectoryHandle(newDirHandle);
+            setCacheRoot(newDirHandle);
+            setCacheEnabled(true);
+            localStorage.setItem('messenger_cache_permission', 'granted');
+          }
+        } catch (err) {
+          console.error('Ошибка восстановления кэша:', err);
+          setCacheEnabled(false);
+          localStorage.setItem('messenger_cache_permission', 'denied');
+        }
+      }
+      setCacheInitialized(true);
+    };
+    initCache();
+  }, []);
 
   // ========== Функция обновления CSS-переменных ==========
   const updateVariables = useCallback(() => {
@@ -755,7 +871,13 @@ export function Messenger({ userId }) {
                 style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'flex-start' }}
               >
                 {otherParticipant && (
-                  <Avatar userId={otherParticipant} username={displayName} size={32} />
+                  <Avatar
+                    userId={otherParticipant} 
+                    username={displayName} 
+                    size={32}
+                    cacheEnabled={cacheEnabled}
+                    getCachedFile={getCachedFile}
+                    saveToCache={saveToCache} />
                 )}
                 <span>{displayName}</span>
                 {unreadCounts[conv.id] > 0 && (

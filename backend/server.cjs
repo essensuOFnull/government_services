@@ -2,13 +2,14 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
-const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const https = require('https');
 const bcrypt = require('bcryptjs');
 const { v4: uuid } = require('uuid');
+const selfsigned = require('selfsigned');
 
 // Импорт Sequelize моделей
 const {
@@ -27,6 +28,53 @@ const app = express();
 const PORT = process.env.PORT || 22869;
 const isDev = process.env.NODE_ENV !== 'production';
 
+// Функция для получения или создания самоподписанного сертификата
+function getOrCreateCert() {
+  const certDir = path.join(__dirname, 'certs');
+  const keyPath = path.join(certDir, 'key.pem');
+  const certPath = path.join(certDir, 'cert.pem');
+
+  // Если сертификаты уже существуют, используем их
+  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+    console.log('📁 Используем существующие сертификаты');
+    return {
+      key: fs.readFileSync(keyPath, 'utf8'),
+      cert: fs.readFileSync(certPath, 'utf8')
+    };
+  }
+
+  // Пытаемся сгенерировать новый самоподписанный сертификат
+  console.log('🔐 Генерируем самоподписанный сертификат...');
+  try {
+    const attrs = [{ name: 'commonName', value: 'localhost' }];
+    const pems = selfsigned.generate(attrs, { days: 365 });
+
+    if (!pems || !pems.private || !pems.cert) {
+      throw new Error('Не удалось сгенерировать сертификат: pems.private или pems.cert отсутствует');
+    }
+
+    // Создаём директорию, если её нет
+    if (!fs.existsSync(certDir)) {
+      fs.mkdirSync(certDir, { recursive: true });
+    }
+
+    // Сохраняем сертификаты для будущих запусков
+    fs.writeFileSync(keyPath, pems.private);
+    fs.writeFileSync(certPath, pems.cert);
+
+    console.log('✅ Сертификаты успешно сгенерированы и сохранены');
+    return {
+      key: pems.private,
+      cert: pems.cert
+    };
+  } catch (err) {
+    console.error('❌ Ошибка при генерации сертификата:', err.message);
+    console.log('Пожалуйста, создайте сертификаты с помощью generate-certs.bat');
+    process.exit(1);
+  }
+}
+
+// Middleware
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:22869',
   credentials: true
@@ -35,15 +83,14 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-//лимитер
+// Лимитер для аутентификации
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10, // 10 попыток за 15 минут
-  skipSuccessfulRequests: true, // не считать успешные логины
+  max: 10,
+  skipSuccessfulRequests: true,
   message: { success: false, message: 'Слишком много попыток, повторите позже' }
 });
 
-// Применяем лимитер только к маршрутам аутентификации
 app.use('/api/login', authLimiter);
 app.use('/api/register', authLimiter);
 app.use('/api/change-password', authLimiter);
@@ -81,11 +128,7 @@ app.post('/api/register', async (req, res) => {
       });
     }
 
-    // Проверяем, существует ли пользователь
-    const existingUser = await User.findOne({ 
-      where: { username: username } 
-    });
-
+    const existingUser = await User.findOne({ where: { username } });
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -93,34 +136,30 @@ app.post('/api/register', async (req, res) => {
       });
     }
 
-    // Хэшируем пароль
     const hashedPassword = await bcrypt.hash(password, 10);
     const userId = uuid();
     const now = Date.now();
 
-    // Создаем пользователя
     const user = await User.create({
       id: userId,
-      username: username,
+      username,
       password: hashedPassword,
       role: 'guest',
       status: 'offline',
       storage_used: 0,
-      storage_quota: 10 * 1024 * 1024 * 1024, // 10GB для гостей
+      storage_quota: 10 * 1024 * 1024 * 1024,
       total_storage_used: 0,
       created_at: now,
       updated_at: now
     });
 
-    // Создаем запись о квоте хранилища
     const { UserStorageQuota } = require('./database.cjs');
     await UserStorageQuota.create({
       user_id: userId,
-      storage_limit_bytes: 10 * 1024 * 1024 * 1024, // 10GB
+      storage_limit_bytes: 10 * 1024 * 1024 * 1024,
       storage_used_bytes: 0
     });
 
-    // Не возвращаем пароль
     const userResponse = user.toJSON();
     delete userResponse.password;
 
@@ -150,62 +189,50 @@ app.post('/api/login', async (req, res) => {
       });
     }
 
-    // Ищем пользователя
-    const user = await User.findOne({ 
-      where: { username: username } 
-    });
-
+    const user = await User.findOne({ where: { username } });
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Неверное имя пользователя или пароль'
-      });
-    }
-
-    // Проверяем пароль
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    
-    if (!isValidPassword) {
-      // Записываем неудачную попытку входа
-      try {
-        await LoginAttempt.create({
-          id: uuid(),
-          ip,
-          type: 'failed',
-          username: username,
-          created_at: Date.now()
-        });
-      } catch (e) {
-        console.error('Failed to log login attempt:', e);
-      }
-      
-      return res.status(401).json({
-        success: false,
-        message: 'Неверное имя пользователя или пароль'
-      });
-    }
-
-    // Записываем успешную попытку входа
-    try {
       await LoginAttempt.create({
         id: uuid(),
         ip,
-        type: 'success',
-        username: username,
+        type: 'failed',
+        username,
         created_at: Date.now()
+      }).catch(e => console.error('Failed to log login attempt:', e));
+      return res.status(401).json({
+        success: false,
+        message: 'Неверное имя пользователя или пароль'
       });
-    } catch (e) {
-      console.error('Failed to log login attempt:', e);
     }
 
-    // Обновляем статус пользователя
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    if (!isValidPassword) {
+      await LoginAttempt.create({
+        id: uuid(),
+        ip,
+        type: 'failed',
+        username,
+        created_at: Date.now()
+      }).catch(e => console.error('Failed to log login attempt:', e));
+      return res.status(401).json({
+        success: false,
+        message: 'Неверное имя пользователя или пароль'
+      });
+    }
+
+    await LoginAttempt.create({
+      id: uuid(),
+      ip,
+      type: 'success',
+      username,
+      created_at: Date.now()
+    }).catch(e => console.error('Failed to log login attempt:', e));
+
     await user.update({
       status: 'online',
       last_seen: Date.now(),
       updated_at: Date.now()
     });
 
-    // Не возвращаем пароль
     const userResponse = user.toJSON();
     delete userResponse.password;
 
@@ -226,7 +253,6 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/change-username', async (req, res) => {
   try {
     const { id, newUsername } = req.body;
-    
     if (!id || !newUsername) {
       return res.status(400).json({
         success: false,
@@ -234,14 +260,12 @@ app.post('/api/change-username', async (req, res) => {
       });
     }
 
-    // Проверяем, не занято ли имя
-    const existingUser = await User.findOne({ 
-      where: { 
+    const existingUser = await User.findOne({
+      where: {
         username: newUsername,
         id: { [Op.ne]: id }
-      } 
+      }
     });
-
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -249,12 +273,8 @@ app.post('/api/change-username', async (req, res) => {
       });
     }
 
-    // Обновляем имя пользователя
     await User.update(
-      { 
-        username: newUsername, 
-        updated_at: Date.now() 
-      },
+      { username: newUsername, updated_at: Date.now() },
       { where: { id } }
     );
 
@@ -274,7 +294,6 @@ app.post('/api/change-username', async (req, res) => {
 app.post('/api/change-password', async (req, res) => {
   try {
     const { id, newPassword } = req.body;
-    
     if (!id || !newPassword) {
       return res.status(400).json({
         success: false,
@@ -282,15 +301,9 @@ app.post('/api/change-password', async (req, res) => {
       });
     }
 
-    // Хэшируем новый пароль
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-    // Обновляем пароль
     await User.update(
-      { 
-        password: hashedPassword, 
-        updated_at: Date.now() 
-      },
+      { password: hashedPassword, updated_at: Date.now() },
       { where: { id } }
     );
 
@@ -310,18 +323,15 @@ app.post('/api/change-password', async (req, res) => {
 app.get('/api/user/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    
     const user = await User.findByPk(id, {
       attributes: { exclude: ['password'] }
     });
-    
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'Пользователь не найден'
       });
     }
-    
     res.json({
       success: true,
       user
@@ -350,23 +360,29 @@ app.use((err, req, res, next) => {
 // Инициализация сервера
 async function start() {
   try {
-    // Инициализируем базу данных
     await initializeDatabase();
     console.log('✅ База данных инициализирована');
 
-    // Инициализируем планировщик очистки файлов
     storageManager.startCleanupScheduler();
     console.log('✅ Планировщик очистки файлов запущен');
 
-    const server = http.createServer(app);
+    const useHttps = process.env.USE_HTTPS === 'true';
+    let server;
 
-    // Инициализируем WebSocket сервер мессенджера
+    if (useHttps) {
+      const { key, cert } = getOrCreateCert();
+      server = https.createServer({ key, cert }, app);
+      console.log('🔒 Сервер работает через HTTPS');
+    } else {
+      server = http.createServer(app);
+      console.log('🔓 Сервер работает через HTTP');
+    }
+
     const messengerWs = new MessengerWebSocketServer(server);
     app.set('wsServer', messengerWs);
     console.log('✅ WebSocket сервер мессенджера инициализирован');
 
     if (isDev) {
-      // В режиме разработки подключаем Vite middleware
       const { createServer: createViteServer } = require('vite');
       const viteServer = await createViteServer({
         root: path.resolve(__dirname, '..'),
@@ -376,66 +392,39 @@ async function start() {
       
       console.log('📦 Vite сервер инициализирован');
       
-      app.use((req, res, next) => {
-        console.log(`⬜ До Vite middleware: ${req.method} ${req.path}`);
-        next();
-      });
-      
       app.use(viteServer.middlewares);
       
-      app.use((req, res, next) => {
-        console.log(`⬛ После Vite middleware: ${req.method} ${req.path}`);
-        next();
-      });
-      
-      // SPA fallback
       app.use('*', async (req, res) => {
         const path_url = req.path;
-        console.log(`📍 Вошли в SPA fallback для: ${path_url}`);
-        
         if (/\.\w+$/.test(path_url)) {
-          console.log(`⏭️  Пропуск файла: ${path_url}`);
           return res.status(404).end('Not found');
         }
-        
-        console.log(`🔄 SPA fallback для маршрута: ${path_url}`);
-        
         try {
           const htmlPath = path.resolve(__dirname, '../index.html');
-          console.log(`📄 Читаю index.html из: ${htmlPath}`);
-          
           let html = fs.readFileSync(htmlPath, 'utf-8');
           html = await viteServer.transformIndexHtml(path_url, html);
-          
           res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
         } catch (e) {
-          console.error('❌ Ошибка в SPA fallback:', e.message);
           viteServer.ssrFixStacktrace(e);
           res.status(500).end(`Error: ${e.message}`);
         }
       });
     } else {
-      // В режиме production отдаём статические файлы
       app.use(express.static(path.resolve(__dirname, '../dist')));
-      
-      // SPA fallback для всех остальных маршрутов
       app.use('*', (req, res) => {
         res.sendFile(path.resolve(__dirname, '../dist', 'index.html'));
       });
     }
     
-    // Простая маршрутизация для встроенного S3-подобного API
     app.get('/api/s3/:bucket/*', (req, res) => {
       try {
         const bucket = req.params.bucket;
-        const key = req.params[0]; // wildcard part
+        const key = req.params[0];
         const s3Base = process.env.S3_DATA_DIR || path.resolve(__dirname, '../data/s3');
         const filePath = path.join(s3Base, bucket, key);
-
         if (!fs.existsSync(filePath)) {
           return res.status(404).json({ success: false, message: 'Not found' });
         }
-
         res.sendFile(filePath);
       } catch (err) {
         console.error('S3 proxy error:', err);
@@ -444,10 +433,12 @@ async function start() {
     });
 
     server.listen(PORT, () => {
+      const protocol = useHttps ? 'https' : 'http';
+      const wsProtocol = useHttps ? 'wss' : 'ws';
       console.log(`\n${'='.repeat(50)}`);
-      console.log(`✅ Сервер запущен на http://localhost:${PORT}`);
+      console.log(`✅ Сервер запущен на ${protocol}://localhost:${PORT}`);
       console.log(`${'='.repeat(50)}`);
-      console.log(`📨 WebSocket: ws://localhost:${PORT}/ws/messenger`);
+      console.log(`📨 WebSocket: ${wsProtocol}://localhost:${PORT}/ws/messenger`);
       if (isDev) {
         console.log(`📝 Режим разработки (Vite middleware активен)`);
       } else {
