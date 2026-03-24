@@ -87,8 +87,8 @@ export default function FileItem({
         const token = j.token;
         const url = `/api/messenger/preview/${fileId}?token=${encodeURIComponent(token)}`;
 
-        // Загрузка с прогрессом
         setIsDownloading(true);
+        setDownloadProgress(0); // начальный прогресс 0
         const objectUrl = await loadFileWithProgress(url, key, (progress) => {
           setDownloadProgress(progress);
         });
@@ -125,6 +125,7 @@ export default function FileItem({
 
       if (!url) {
         setIsDownloading(true);
+        setDownloadProgress(0);
         url = await loadFileWithProgress(s3url, key, (progress) => {
           setDownloadProgress(progress);
         });
@@ -203,9 +204,12 @@ export default function FileItem({
   return (
     <div className="file-item">
       <hr/>
-      {isDownloading && downloadProgress !== null && (
+      {isDownloading && (
         <div className="progress-indicator">
-          <span className="progress-indicator-bar" style={{ width: `${downloadProgress}%` }} />
+          <span 
+            className="progress-indicator-bar" 
+            style={{ width: `${downloadProgress !== null ? downloadProgress : 0}%` }} 
+          />
         </div>
       )}
       {isImage && (

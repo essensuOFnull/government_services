@@ -482,7 +482,6 @@ router.get('/preview/:fileId', async (req, res) => {
     const file = await File.findByPk(fileId);
     if (!file) return res.status(404).json({ success: false, message: 'File not found' });
 
-    // Скачиваем во временный файл
     const tempPath = path.join(uploadsDir, `temp-preview-${fileId}`);
     await s3Service.downloadFile(file.s3_key, tempPath);
 
@@ -511,6 +510,8 @@ router.get('/preview/:fileId', async (req, res) => {
         });
       });
     } else {
+      // ✅ Добавляем Content-Length для прогресса
+      res.setHeader('Content-Length', fileSize);
       res.setHeader('Content-Type', file.mime_type);
       res.setHeader('Accept-Ranges', 'bytes');
       const readStream = fs.createReadStream(tempPath);
