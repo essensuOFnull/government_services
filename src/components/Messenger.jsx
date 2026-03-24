@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback,useMemo } from 'react';
 import { get, set } from 'idb-keyval';
 import './Messenger.css';
 
@@ -6,7 +6,10 @@ import Message from './Message';
 import Avatar from './Avatar';
 import UserSearch from './UserSearch';
 
+import { useAuthContext } from './auth/AuthContext';
+
 export function Messenger({ userId }) {
+  const { user } = useAuthContext();
   // ========== Оригинальные состояния ==========
   const [conversations, setConversations] = useState([]);
   const [currentConversation, setCurrentConversation] = useState(null);
@@ -44,6 +47,25 @@ export function Messenger({ userId }) {
   const menuToggleRef = useRef(null);
   const messageActionsRef = useRef(null);
   const resizeObserverRef = useRef(null);
+
+  const [pendingMessages, setPendingMessages] = useState([]);
+
+  const updatePendingMessage = useCallback((localId, updater) => {
+    setPendingMessages(prev =>
+      prev.map(msg => (msg.localId === localId ? updater(msg) : msg))
+    );
+  }, []);
+
+  const allMessages = useMemo(() => {
+    const real = messages.map(m => ({ ...m, isPending: false }));
+    const pending = pendingMessages.map(p => ({
+      ...p,
+      id: p.localId,
+      isPending: true,
+      created_at: p.created_at,
+    }));
+    return [...real, ...pending].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  }, [messages, pendingMessages]);
 
   async function saveDirectoryHandle(handle) {
     await set('messenger_cache_handle', handle);
@@ -369,9 +391,24 @@ export function Messenger({ userId }) {
         break;
 
       case 'new_message':
-        console.log('new_message received:', data.message);
-        if (currentConversationRef.current && currentConversationRef.current.id === data.message?.conversation_id) {
-          setMessages(prev => [...prev, data.message]);
+        const msg = data.message;
+        if (msg.temporaryId) {
+          // Ищем ожидающее сообщение по localId
+          setPendingMessages(prev => {
+            const idx = prev.findIndex(p => p.localId === msg.temporaryId);
+            if (idx !== -1) {
+              // Удаляем из pending и добавляем в реальные сообщения
+              const newPending = prev.filter(p => p.localId !== msg.temporaryId);
+              setMessages(prevMessages => [...prevMessages, msg]);
+              return newPending;
+            }
+            return prev;
+          });
+        } else {
+          // Обычная логика добавления сообщения
+          if (currentConversationRef.current && currentConversationRef.current.id === msg?.conversation_id) {
+            setMessages(prev => [...prev, msg]);
+          }
         }
         if (data.message && data.message.sender_id && data.message.sender_username) {
           setUsers(prev => new Map(prev).set(data.message.sender_id, {
@@ -705,42 +742,121 @@ export function Messenger({ userId }) {
     if (!currentConversation.id) return;
 
     const content = messageInput;
-    setMessageInput('');
+    const localId = Date.now() + '-' + Math.random().toString(36).substr(2, 8);
+    const filesToUpload = [...attachments]; // сохраняем копию
 
-    let uploadedFileIds = [];
-    if (attachments.length > 0) {
-      try {
+    // Очищаем поле ввода и вложения сразу для UX
+    setMessageInput('');
+    setAttachments([]);
+
+    // Создаём временное сообщение
+    const newPending = {
+      localId,
+      content,
+      conversation_id: currentConversation.id,
+      sender_id: userId,
+      sender_username: user?.username || userId, // нужно передать user из контекста
+      created_at: new Date().toISOString(),
+      file_ids: [],
+      files: filesToUpload.map(file => ({ file, progress: 0, id: null })),
+      progress: {
+        text: 0,
+        files: filesToUpload.reduce((acc, _, idx) => ({ ...acc, [idx]: 0 }), {}),
+      },
+      status: 'uploading_files', // 'uploading_files', 'awaiting_confirm', 'error'
+      error: null,
+    };
+    setPendingMessages(prev => [...prev, newPending]);
+
+    // Функция загрузки одного файла с прогрессом
+    const uploadFile = (file, index) => {
+      return new Promise((resolve, reject) => {
         const formData = new FormData();
-        attachments.forEach(f => formData.append('files', f));
+        formData.append('files', file);
         formData.append('conversationId', currentConversation.id);
 
-        const resp = await fetch('/api/messenger/upload-files', {
-          method: 'POST',
-          headers: { 'x-user-id': userId },
-          body: formData
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/messenger/upload-files', true);
+        xhr.setRequestHeader('x-user-id', userId);
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const percent = (e.loaded / e.total) * 100;
+            updatePendingMessage(localId, msg => ({
+              ...msg,
+              progress: {
+                ...msg.progress,
+                files: { ...msg.progress.files, [index]: percent },
+              },
+            }));
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            try {
+              const j = JSON.parse(xhr.responseText);
+              if (j.success && j.files && j.files[0]) {
+                resolve(j.files[0].id);
+              } else {
+                reject(new Error(j.message || 'Upload failed'));
+              }
+            } catch (e) {
+              reject(e);
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Network error'));
+        xhr.send(formData);
+      });
+    };
+
+    try {
+      // Загружаем все файлы параллельно
+      const uploadedIds = await Promise.all(
+        filesToUpload.map((file, idx) => uploadFile(file, idx))
+      );
+
+      // Обновляем прогресс текста (сразу 100%) и сохраняем ID файлов
+      updatePendingMessage(localId, msg => ({
+        ...msg,
+        progress: { ...msg.progress, text: 100 },
+        file_ids: uploadedIds,
+        files: msg.files.map((f, idx) => ({ ...f, id: uploadedIds[idx] })),
+        status: 'awaiting_confirm',
+      }));
+
+      // Отправляем сообщение через WebSocket с временным ID
+      wsRef.current?.send(JSON.stringify({
+        type: 'send_message',
+        data: {
+          conversationId: currentConversation.id,
+          content,
+          fileIds: uploadedIds,
+          temporaryId: localId,
+        },
+      }));
+
+      // Таймаут на случай, если ответ не придёт
+      setTimeout(() => {
+        updatePendingMessage(localId, msg => {
+          if (msg.status === 'awaiting_confirm') {
+            return { ...msg, status: 'error', error: 'Не удалось отправить сообщение' };
+          }
+          return msg;
         });
-        const j = await resp.json();
-        if (j.success && Array.isArray(j.files)) {
-          uploadedFileIds = j.files.map(f => f.id);
-          if (j.storageInfo) setStorageInfo(j.storageInfo);
-        } else {
-          console.error('Ошибка загрузки вложений', j && j.message);
-        }
-      } catch (e) {
-        console.error('Ошибка при загрузке вложений', e);
-      }
+      }, 10000);
+    } catch (err) {
+      console.error('Upload error:', err);
+      updatePendingMessage(localId, msg => ({
+        ...msg,
+        status: 'error',
+        error: err.message,
+      }));
     }
-
-    wsRef.current?.send(JSON.stringify({
-      type: 'send_message',
-      data: {
-        conversationId: currentConversation.id,
-        content,
-        fileIds: uploadedFileIds
-      }
-    }));
-
-    setAttachments([]);
   };
 
   const handleTyping = () => {
@@ -922,7 +1038,7 @@ export function Messenger({ userId }) {
             </div>
 
             <div className="messages-list" ref={messageListRef}>
-              {messages.map(msg => (
+              {allMessages.map(msg => (
                 <Message
                   key={msg.id}
                   msg={msg}
@@ -934,6 +1050,11 @@ export function Messenger({ userId }) {
                   cacheEnabled={cacheEnabled}
                   getCachedFile={getCachedFile}
                   saveToCache={saveToCache}
+                  isPending={msg.isPending}
+                  progress={msg.progress}
+                  pendingFiles={msg.files}
+                  status={msg.status}
+                  onRetry={() => handleRetry(msg.localId)} // нужно реализовать
                 />
               ))}
             </div>

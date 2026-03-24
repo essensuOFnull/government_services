@@ -10,12 +10,14 @@ export default function FileItem({
   cacheEnabled,
   getCachedFile,
   saveToCache,
-  userId: propUserId
+  userId: propUserId,
 }) {
   const { openWindow, closeWindow } = useWindowsManager();
   const { user } = useAuthContext();
   const userId = propUserId || user?.id;
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [downloadProgress, setDownloadProgress] = useState(null);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const mime = fileMeta.mime_type || '';
   const s3url = fileMeta.s3Url || `/api/messenger/download-file/${fileId}`;
@@ -25,6 +27,126 @@ export default function FileItem({
   const isVideo = mime.startsWith('video/');
   const isAudio = mime.startsWith('audio/');
   const isText = mime.startsWith('text/') || mime === 'application/json';
+
+  // Загрузка файла с прогрессом
+  const loadFileWithProgress = (url, key, onProgress) => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.setRequestHeader('x-user-id', userId);
+      xhr.responseType = 'blob';
+      xhr.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) {
+          onProgress((e.loaded / e.total) * 100);
+        }
+      };
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const blob = xhr.response;
+          const objectUrl = URL.createObjectURL(blob);
+          if (cacheEnabled && saveToCache) {
+            saveToCache(key, blob).catch(console.error);
+          }
+          resolve(objectUrl);
+        } else {
+          reject(new Error(`HTTP ${xhr.status}`));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
+  };
+
+  // Загрузка превью
+  useEffect(() => {
+    let active = true;
+    if (!(isImage || isVideo || isAudio) || !userId) return;
+
+    (async () => {
+      const key = `preview_${fileId}`;
+      try {
+        // Проверка кэша
+        if (cacheEnabled && getCachedFile) {
+          const cachedUrl = await getCachedFile(key);
+          if (cachedUrl && active) {
+            setPreviewUrl(cachedUrl);
+            return;
+          }
+        }
+
+        // Получение токена для превью
+        const tokenResp = await fetch(`/api/messenger/preview-token/${fileId}`, {
+          method: 'POST',
+          headers: { 'x-user-id': userId },
+        });
+        const j = await tokenResp.json();
+        if (!tokenResp.ok || !j.success || !j.token) {
+          console.error('Failed to get preview token', j);
+          return;
+        }
+        const token = j.token;
+        const url = `/api/messenger/preview/${fileId}?token=${encodeURIComponent(token)}`;
+
+        // Загрузка с прогрессом
+        setIsDownloading(true);
+        const objectUrl = await loadFileWithProgress(url, key, (progress) => {
+          setDownloadProgress(progress);
+        });
+        if (active) {
+          setPreviewUrl(objectUrl);
+        }
+      } catch (err) {
+        console.error('Preview error', err);
+      } finally {
+        if (active) {
+          setIsDownloading(false);
+          setDownloadProgress(null);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+      if (previewUrl && previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [fileId, userId, isImage, isVideo, isAudio, cacheEnabled, getCachedFile, saveToCache]);
+
+  // Скачивание файла (также с прогрессом, опционально)
+  const handleDownload = async () => {
+    try {
+      const key = `file_${fileId}`;
+      let url = null;
+
+      if (cacheEnabled && getCachedFile) {
+        url = await getCachedFile(key);
+      }
+
+      if (!url) {
+        setIsDownloading(true);
+        url = await loadFileWithProgress(s3url, key, (progress) => {
+          setDownloadProgress(progress);
+        });
+      }
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      if (url.startsWith('blob:')) {
+        setTimeout(() => URL.revokeObjectURL(url), 100);
+      }
+    } catch (e) {
+      console.error('Download error', e);
+      alert('Не удалось скачать файл');
+    } finally {
+      setIsDownloading(false);
+      setDownloadProgress(null);
+    }
+  };
 
   // Загрузка файла (для скачивания или предпросмотра)
   const loadFile = async (url, key) => {
@@ -97,40 +219,6 @@ export default function FileItem({
     };
   }, [fileId, userId, isImage, isVideo, isAudio, cacheEnabled, getCachedFile, saveToCache]);
 
-  const handleDownload = async () => {
-    try {
-      const key = `file_${fileId}`;
-      let url = null;
-
-      if (cacheEnabled && getCachedFile) {
-        url = await getCachedFile(key);
-      }
-
-      if (!url) {
-        const resp = await fetch(s3url, { headers: { 'x-user-id': userId } });
-        if (!resp.ok) throw new Error('Download failed');
-        const blob = await resp.blob();
-        url = URL.createObjectURL(blob);
-        if (cacheEnabled && saveToCache) {
-          await saveToCache(key, blob);
-        }
-      }
-
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      if (url.startsWith('blob:')) {
-        setTimeout(() => URL.revokeObjectURL(url), 100);
-      }
-    } catch (e) {
-      console.error('Download error', e);
-      alert('Не удалось скачать файл');
-    }
-  };
-
   const handleOpen = () => {
     openWindow({
       title: fileMeta.original_filename || filename,
@@ -186,6 +274,11 @@ export default function FileItem({
   return (
     <div className="file-item">
       <hr/>
+      {isDownloading && downloadProgress !== null && (
+        <div className="progress-indicator">
+          <span className="progress-indicator-bar" style={{ width: `${downloadProgress}%` }} />
+        </div>
+      )}
       {isImage && (
         previewUrl ? (
           <img src={previewUrl} alt={filename} className="file-preview" />
@@ -215,8 +308,8 @@ export default function FileItem({
       )}
 
       <div className="file-actions">
-        <button onClick={handleDownload} className="download-btn">
-          💾
+        <button onClick={handleDownload} className="download-btn" disabled={isDownloading}>
+          {isDownloading ? 'Загрузка...' : '💾'}
         </button>
         {(!isText) && (
           <button onClick={handleOpen} className="open-btn">

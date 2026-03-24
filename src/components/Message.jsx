@@ -12,7 +12,12 @@ export default function Message({
   wsRef,
   cacheEnabled,
   getCachedFile,
-  saveToCache
+  saveToCache,
+  isPending = false,
+  progress = { text: 100, files: {} },
+  pendingFiles = [],
+  status = 'sent',
+  onRetry,
 }) {
   const files = msg.file_ids || [];
   const { user } = useAuthContext();
@@ -89,27 +94,61 @@ export default function Message({
             <div className="message-content">
               {renderContentWithMentions(msg.content)}
             </div>
+
+            {isPending && progress.text < 100 && (
+              <div className="progress-indicator">
+                <span className="progress-indicator-bar" style={{ width: `${progress.text}%` }} />
+              </div>
+            )}
+
+            {isPending && pendingFiles.length > 0 && (
+              <div className="pending-files">
+                {pendingFiles.map((f, idx) => (
+                  <div key={idx} className="pending-file">
+                    <span>{f.file.name}</span>
+                    <div className="progress-indicator">
+                      <span className="progress-indicator-bar" style={{ width: `${progress.files[idx]}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {isPending && status === 'awaiting_confirm' && (
+              <div className="sending-indicator">Отправляется...</div>
+            )}
+
+            {isPending && status === 'error' && (
+              <div className="error-message">
+                <span>Ошибка: {msg.error}</span>
+                <button onClick={onRetry}>Повторить</button>
+              </div>
+            )}
           </div>
         </div>
 
         {files.length > 0 && (
           <div className="message-files">
-            {files.map(fileId => (
-              <FileItem
-                key={fileId}
-                fileId={fileId}
-                fileMeta={fileMeta.get(fileId) || {}}
-                userId={user?.id}
-                cacheEnabled={cacheEnabled}
-                getCachedFile={getCachedFile}
-                saveToCache={saveToCache}
-              />
-            ))}
+            {!isPending && (msg.file_ids || []).length > 0 && (
+              <div className="message-files">
+                {msg.file_ids.map(fileId => (
+                  <FileItem
+                    key={fileId}
+                    fileId={fileId}
+                    fileMeta={fileMeta.get(fileId) || {}}
+                    userId={senderId}
+                    cacheEnabled={cacheEnabled}
+                    getCachedFile={getCachedFile}
+                    saveToCache={saveToCache}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="message-controls">
-            {isCurrentUser && (
+            {isCurrentUser && !isPending && (
               <button
                 onClick={async () => {
                   if (!confirm('Удалить сообщение? Это действие нельзя отменить.'))
@@ -137,7 +176,7 @@ export default function Message({
               >🗑️
               </button>
             )}
-            <ForwardButton msg={msg} wsRef={wsRef} />
+            {!isPending && <ForwardButton msg={msg} wsRef={wsRef} />}
           </div>
           <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'flex-end' }}>
             <small>{formatTime(msg.created_at)}</small>

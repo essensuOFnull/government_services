@@ -338,7 +338,7 @@ export default function MenuWindow({ userId }) {
             <legend>Рабочий стол</legend>
             <div>Режим отображения обоев:</div>
 			<br/>
-			<div class="field-row">
+			<div className="field-row">
 				<input
 					id="radio_cover"
 					type="radio"
@@ -347,12 +347,12 @@ export default function MenuWindow({ userId }) {
 					checked={wallpaperMode === 'cover'}
 					onChange={() => handleModeChange('cover')}
 				/>
-				<label for="radio_cover">
+				<label htmlFor="radio_cover">
 					Покрыть экран с обрезкой (cover)
 				</label>
 			</div>
             <br />
-			<div class="field-row">
+			<div className="field-row">
 				<input
 					id="radio_contain"
 					type="radio"
@@ -361,12 +361,12 @@ export default function MenuWindow({ userId }) {
 					checked={wallpaperMode === 'contain'}
 					onChange={() => handleModeChange('contain')}
 				/>
-				<label for="radio_contain">
+				<label htmlFor="radio_contain">
 					Вписать целиком с сохранением пропорций (contain)
 				</label>
 			</div>
             <br />
-			<div class="field-row">
+			<div className="field-row">
 				<input
 					id="radio_stretch"
 					type="radio"
@@ -375,7 +375,7 @@ export default function MenuWindow({ userId }) {
 					checked={wallpaperMode === 'stretch'}
 					onChange={() => handleModeChange('stretch')}
 				/>
-				<label for="radio_stretch">
+				<label htmlFor="radio_stretch">
 					Растянуть с искажением (stretch)
 				</label>
 			</div>
