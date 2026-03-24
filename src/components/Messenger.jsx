@@ -68,10 +68,9 @@ export function Messenger({ userId }) {
   }, [messages, pendingMessages]);
   // ========== Новая функция отправки сообщения (общая логика) ==========
   const sendMessageInternal = async (content, filesToUpload, customLocalId = null) => {
+    const localId = customLocalId || (Date.now() + '-' + Math.random().toString(36));
     if (!content.trim() && filesToUpload.length === 0) return;
     if (!currentConversation.id) return;
-
-    const localId = customLocalId || (Date.now() + '-' + Math.random().toString(36).substr(2, 8));
 
     // Создаём временное сообщение
     const newPending = {
@@ -537,17 +536,15 @@ export function Messenger({ userId }) {
       case 'new_message':
         const msg = data.message;
         if (msg.temporaryId) {
-          // Ищем ожидающее сообщение по localId
-          setPendingMessages(prev => {
-            const idx = prev.findIndex(p => p.localId === msg.temporaryId);
-            if (idx !== -1) {
-              // Удаляем из pending и добавляем в реальные сообщения
-              const newPending = prev.filter(p => p.localId !== msg.temporaryId);
-              setMessages(prevMessages => [...prevMessages, msg]);
-              return newPending;
-            }
-            return prev;
-          });
+            setPendingMessages(prev => {
+                const idx = prev.findIndex(p => p.localId === msg.temporaryId);
+                if (idx !== -1) {
+                    const newPending = prev.filter(p => p.localId !== msg.temporaryId);
+                    setMessages(prevMessages => [...prevMessages, msg]);
+                    return newPending;
+                }
+                return prev;
+            });
         } else {
           // Обычная логика добавления сообщения
           if (currentConversationRef.current && currentConversationRef.current.id === msg?.conversation_id) {

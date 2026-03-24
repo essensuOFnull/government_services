@@ -199,51 +199,54 @@ class MessengerWebSocketServer {
   }
 
   async handleSendMessage(userId, data, ws) {
-    const { conversationId, content, fileIds = [] } = data;
+    const { conversationId, content, fileIds = [], temporaryId } = data; // добавляем temporaryId
     const messageId = uuid();
 
     try {
-      const compressedContent = await compressContent(content);
-      const message = await Message.create({
-        id: messageId,
-        conversation_id: conversationId,
-        sender_id: userId,
-        content_compressed: compressedContent,
-        file_ids: JSON.stringify(fileIds),
-        created_at: Date.now()
-      });
-      await this.attachFileReferences(message.id, fileIds);
+        const compressedContent = await compressContent(content);
+        const message = await Message.create({
+            id: messageId,
+            conversation_id: conversationId,
+            sender_id: userId,
+            content_compressed: compressedContent,
+            file_ids: JSON.stringify(fileIds),
+            created_at: Date.now()
+        });
+        await this.attachFileReferences(message.id, fileIds);
 
-      const sender = await User.findByPk(userId);
-      const senderUsername = sender?.username || userId;
-      
-      console.log(`[WebSocket] Message sender: userId="${userId}", username="${senderUsername}"`);
+        const sender = await User.findByPk(userId);
+        const senderUsername = sender?.username || userId;
 
-      await Conversation.update(
-        { last_message_at: Date.now() },
-        { where: { id: conversationId } }
-      );
+        await Conversation.update(
+            { last_message_at: Date.now() },
+            { where: { id: conversationId } }
+        );
 
-      const messageData = {
-        id: message.id,
-        conversation_id: message.conversation_id,
-        sender_id: message.sender_id,
-        sender_username: senderUsername,
-        content: content,
-        file_ids: fileIds,
-        created_at: message.created_at
-      };
+        const messageData = {
+            id: message.id,
+            conversation_id: message.conversation_id,
+            sender_id: message.sender_id,
+            sender_username: senderUsername,
+            content: content,
+            file_ids: fileIds,
+            created_at: message.created_at
+        };
 
-      await this.broadcastToConversation(conversationId, {
-        type: 'new_message',
-        message: messageData
-      });
+        // Если temporaryId передан, добавляем его в ответ
+        if (temporaryId) {
+            messageData.temporaryId = temporaryId;
+        }
+
+        await this.broadcastToConversation(conversationId, {
+            type: 'new_message',
+            message: messageData
+        });
     } catch (error) {
-      console.error('Ошибка отправки сообщения:', error);
-      ws.send(JSON.stringify({
-        type: 'error',
-        message: 'Failed to send message'
-      }));
+        console.error('Ошибка отправки сообщения:', error);
+        ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Failed to send message'
+        }));
     }
   }
 
