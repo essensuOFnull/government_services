@@ -102,10 +102,12 @@ export default function AuthorizationWindow({ onClose,onGlobalPasswordInvalid })
 								<label>Имя пользователя:</label>
 								<input
 									type="text"
-									value={username}
+									name="username"
+                  					autoComplete="username"
 									onChange={(e) => setUsername(e.target.value)}
 									required
 									disabled={loading}
+									placeholder="Введите имя пользователя"
 								/>
 							</div>
 						</div>
@@ -114,10 +116,12 @@ export default function AuthorizationWindow({ onClose,onGlobalPasswordInvalid })
 								<label>Пароль:</label>
 								<input
 									type="password"
-									value={password}
+									name="password"
+                  					autoComplete="current-password"
 									onChange={(e) => setPassword(e.target.value)}
 									required
 									disabled={loading}
+									placeholder="Введите пароль"
 								/>
 							</div>
 						</div>
@@ -150,7 +154,8 @@ export default function AuthorizationWindow({ onClose,onGlobalPasswordInvalid })
 								<label>Имя пользователя (3-20 символов):</label>
 								<input
 									type="text"
-									value={username}
+									name="username"
+                  					autoComplete="username"
 									onChange={(e) => setUsername(e.target.value)}
 									required
 									disabled={loading}
@@ -163,7 +168,8 @@ export default function AuthorizationWindow({ onClose,onGlobalPasswordInvalid })
 								<label>Пароль (мин. 8 символов, буквы и цифры):</label>
 								<input
 									type="password"
-									value={password}
+									name="password"
+                  					autoComplete="new-password"
 									onChange={(e) => setPassword(e.target.value)}
 									required
 									disabled={loading}
@@ -176,7 +182,8 @@ export default function AuthorizationWindow({ onClose,onGlobalPasswordInvalid })
 								<label>Подтвердите пароль:</label>
 								<input
 									type="password"
-									value={confirmPassword}
+									name="confirm-password"
+                  					autoComplete="off"
 									onChange={(e) => setConfirmPassword(e.target.value)}
 									required
 									disabled={loading}
