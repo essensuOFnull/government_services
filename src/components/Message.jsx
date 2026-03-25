@@ -96,7 +96,7 @@ export default function Message({
             </div>
 
             {isPending && progress.text < 100 && (
-              <div className="progress-indicator">
+              <div className="progress-indicator segmented">
                 <span className="progress-indicator-bar" style={{ width: `${progress.text}%` }} />
               </div>
             )}
@@ -106,7 +106,7 @@ export default function Message({
                 {pendingFiles.map((f, idx) => (
                   <div key={idx} className="pending-file">
                     <span>{f.file.name}</span>
-                    <div className="progress-indicator">
+                    <div className="progress-indicator segmented">
                       <span className="progress-indicator-bar" style={{ width: `${progress.files[idx]}%` }} />
                     </div>
                   </div>

@@ -211,7 +211,7 @@ export default function FileItem({
     <div className="file-item">
       <hr/>
       {isDownloading && (
-        <div className="progress-indicator">
+        <div className="progress-indicator segmented">
           <span 
             className="progress-indicator-bar" 
             style={{ width: `${downloadProgress !== null ? downloadProgress : 0}%` }} 
