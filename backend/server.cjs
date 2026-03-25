@@ -11,6 +11,45 @@ const bcrypt = require('bcryptjs');
 const { v4: uuid } = require('uuid');
 const selfsigned = require('selfsigned');
 
+const MAX_ATTEMPTS = 10;
+const BLOCK_TIME = 5 * 60 * 1000; // 5 минут
+// Хранилище для IP: { attempts: number, blockedUntil: timestamp }
+const attemptsStore = new Map();
+
+const GLOBAL_PASSWORD_HASH = process.env.GLOBAL_PASSWORD_HASH;
+if (!GLOBAL_PASSWORD_HASH) {
+  console.error('❌ GLOBAL_PASSWORD_HASH не задан в .env');
+  const readline = require('readline');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: true   // важно для поддержки вставки
+  });
+
+  rl.question('Введите глобальный пароль (будет сгенерирован хеш) (для вставки из буфера обмена нажмите правую кнопку мыши): ', (password) => {
+    rl.close();
+    if (!password) {
+      console.error('Пароль не может быть пустым. Завершение.');
+      process.exit(1);
+    }
+    const hash = bcrypt.hashSync(password, 10);
+    console.log(`\n✅ Хеш для .env:\nGLOBAL_PASSWORD_HASH=${hash}`);
+    console.log('Добавьте эту строку в .env и перезапустите сервер.');
+    process.exit(0);
+  });
+  return; // не продолжаем запуск сервера
+}
+
+async function checkGlobalPassword(plainPassword) {
+  if (!plainPassword) return false;
+  try {
+    return await bcrypt.compare(plainPassword, GLOBAL_PASSWORD_HASH);
+  } catch (err) {
+    console.error('Ошибка сравнения глобального пароля:', err);
+    return false;
+  }
+}
+
 // Импорт Sequelize моделей
 const {
   User,
@@ -116,11 +155,57 @@ app.use(async (req, res, next) => {
   }
 });
 
+app.post('/api/verify-global-password', async (req, res) => {
+  const { globalPassword } = req.body;
+  const clientIp = req.ip || req.connection.remoteAddress;
+
+  const record = attemptsStore.get(clientIp) || { attempts: 0, blockedUntil: null };
+
+  if (record.blockedUntil && Date.now() < record.blockedUntil) {
+    return res.status(403).json({
+      success: false,
+      message: 'Слишком много попыток. Попробуйте позже.',
+      blockedUntil: record.blockedUntil,
+      attemptsLeft: 0,
+    });
+  }
+
+  const isValid = await checkGlobalPassword(globalPassword);
+
+  if (isValid) {
+    attemptsStore.delete(clientIp);
+    return res.json({ success: true });
+  } else {
+    record.attempts += 1;
+    let blockedUntil = null;
+    let attemptsLeft = MAX_ATTEMPTS - record.attempts;
+
+    if (record.attempts >= MAX_ATTEMPTS) {
+      blockedUntil = Date.now() + BLOCK_TIME;
+      attemptsLeft = 0;
+      record.blockedUntil = blockedUntil;
+    }
+
+    attemptsStore.set(clientIp, record);
+    return res.status(401).json({
+      success: false,
+      message: 'Неверный глобальный пароль',
+      attemptsLeft,
+      blockedUntil,
+    });
+  }
+});
+
 // Маршруты аутентификации
 app.post('/api/register', async (req, res) => {
   try {
-    const { username, password } = req.body;
-    
+    const { username, password, globalPassword } = req.body;
+    // Проверка глобального пароля
+    if (!await checkGlobalPassword(globalPassword)) {
+      return res.status(403).json({ success: false, message: 'Неверный глобальный пароль' });
+    }
+    const ip = req.ip || req.connection.remoteAddress;
+
     if (!username || !password) {
       return res.status(400).json({
         success: false,
@@ -179,9 +264,13 @@ app.post('/api/register', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, globalPassword } = req.body;
+    // Проверка глобального пароля
+    if (!await checkGlobalPassword(globalPassword)) {
+      return res.status(403).json({ success: false, message: 'Неверный глобальный пароль' });
+    }
     const ip = req.ip || req.connection.remoteAddress;
-    
+
     if (!username || !password) {
       return res.status(400).json({
         success: false,

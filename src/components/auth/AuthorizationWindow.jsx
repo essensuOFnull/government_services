@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useAuthContext } from './AuthContext';
 
-export default function AuthorizationWindow({ onClose }) {
+export default function AuthorizationWindow({ onClose,onGlobalPasswordInvalid }) {
+	const [activeTab, setActiveTab] = useState(0);
 	/*общее*/
 	const { login,register, error, loading } = useAuthContext();
 	const [username, setUsername] = useState('');
@@ -20,7 +21,12 @@ export default function AuthorizationWindow({ onClose }) {
 
 		const result = await login(username, password);
 		if (!result.success) {
-			setLoginError(result.message);
+			// Если ошибка связана с глобальным паролем (проверяем по коду или тексту)
+			if (result.message && (result.message.includes('глобальный пароль') || result.message.toLowerCase().includes('global password'))) {
+				onGlobalPasswordInvalid?.();
+			} else {
+				setLoginError(result.message);
+			}
 		}
 	};
 	/*регистрация*/
@@ -67,16 +73,20 @@ export default function AuthorizationWindow({ onClose }) {
 
 		const result = await register(username, password);
 		if (!result.success) {
-			setRegisterError(result.message);
+			if (result.message && (result.message.includes('глобальный пароль') || result.message.includes('global password'))) {
+				onGlobalPasswordInvalid?.();
+			} else {
+				setRegisterError(result.message);
+			}
 		}
 	};
 	return (
 		<>
 			<menu role="tablist">
-				<li role="tab" aria-selected="true"><a>Вход</a></li>
-				<li role="tab"><a>Регистрация</a></li>
+				<li role="tab" aria-selected={activeTab === 0} onClick={() => setActiveTab(0)}><a>Вход</a></li>
+				<li role="tab" aria-selected={activeTab === 1} onClick={() => setActiveTab(1)}><a>Регистрация</a></li>
 			</menu>
-			<div className="window" role="tabpanel">
+			<div className="window" role="tabpanel" style={{ display: activeTab === 0 ? 'block' : 'none' }}>
 				<div className="window-body">
 					<form onSubmit={handleLoginSubmit} style={{ textAlign: 'center' }}>
 						{(error || loginError) && (
@@ -121,7 +131,7 @@ export default function AuthorizationWindow({ onClose }) {
 					</form>
 				</div>
 			</div>
-			<div className="window" role="tabpanel">
+			<div className="window" role="tabpanel" style={{ display: activeTab === 1 ? 'block' : 'none' }}>
 				<div className="window-body">
 					<form onSubmit={handleRegisterSubmit} style={{ textAlign: 'center' }}>
 						{(error || registerError) && (

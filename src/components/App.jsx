@@ -3,7 +3,7 @@ import Taskbar from './Taskbar';
 import Window from './Window';
 import { AuthProvider, useAuthContext } from './auth/AuthContext';
 import { WindowsProvider, useWindowsManager } from '../hooks/useWindowsManager';
-import AuthorizationWindow from './auth/AuthorizationWindow';
+import AuthWrapper from './auth/AuthWrapper';
 import ProfileWindow from './auth/ProfileWindow';
 import MenuWindow from './MenuWindow';
 import { loadWallpaper, applyWallpaper, loadWallpaperMode } from '../utils/wallpaperUtils';
@@ -28,7 +28,7 @@ function MainApp() {
         openWindow({
           type: 'authorization',
           title: 'Авторизация',
-          children: <AuthorizationWindow />,
+          children: <AuthWrapper />,
         });
       }
     } else if (!loading && isAuthenticated) {

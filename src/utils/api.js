@@ -1,9 +1,14 @@
-// In development, force relative API path so requests go to same origin (Vite middleware)
 const API_BASE_URL = (import.meta.env.MODE === 'development')
   ? '/api'
   : (import.meta.env.VITE_API_URL || '/api');
 
 const api = {
+  async verifyGlobalPassword(globalPassword) {
+    return this.request('/verify-global-password', {
+      method: 'POST',
+      body: JSON.stringify({ globalPassword })
+    });
+  },
   async request(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
     console.log(`API request -> ${options.method || 'GET'} ${url}`);
@@ -60,17 +65,17 @@ const api = {
     }
   },
 
-  async register(username, password) {
+  async register(username, password, globalPassword) {
     return this.request('/register', {
       method: 'POST',
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username, password, globalPassword })
     });
   },
 
-  async login(username, password) {
+  async login(username, password, globalPassword) {
     return this.request('/login', {
       method: 'POST',
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username, password, globalPassword })
     });
   },
 
