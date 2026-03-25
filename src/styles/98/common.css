@@ -1069,3 +1069,36 @@ table > tbody > tr > * {
 * {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 }
+
+/* Элементы, за которые можно перетаскивать окно (например, заголовок окна) */
+div,.title-bar{
+  cursor: move;
+}
+
+/* Текст — курсор выделения текста */
+p, span, h1, h2, h3, h4, h5, h6, li, td, th, label, .text-content {
+  cursor: text;
+}
+
+/* Ссылки — курсор-рука */
+a, a * {
+  cursor: pointer;
+}
+
+/* Кнопки и элементы, выполняющие роль кнопки */
+button,
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+[role="button"],
+[role="tab"] {
+  cursor: pointer;
+}
+
+/* Поля ввода и текстовые области */
+input:not([type="button"]):not([type="submit"]):not([type="reset"]),
+textarea,
+select,
+[contenteditable="true"] {
+  cursor: text;
+}

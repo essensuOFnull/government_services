@@ -24,6 +24,8 @@ export default function Window(props) {
   const { theme } = useTheme();
   const windowRef = useRef(null);
   const titleBarRef = useRef(null);
+  // Храним элементы, которым мы изменили курсор, и их исходные значения
+  const cursorOverridesRef = useRef(new Map());
 
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -38,8 +40,6 @@ export default function Window(props) {
 
   // Состояние для управления вкладками
   const [activeTabIndex, setActiveTabIndex] = useState(0);
-  const [tabs, setTabs] = useState([]);
-  const [tabPanels, setTabPanels] = useState([]);
 
   // ========== Инициализация вкладок из children ==========
   useEffect(() => {
@@ -47,31 +47,25 @@ export default function Window(props) {
 
     const container = windowRef.current;
 
-    // Находим все элементы с ролью tablist
     const tabLists = container.querySelectorAll('[role="tablist"]');
 
     tabLists.forEach((tabList, listIndex) => {
-      // Находим вкладки и панели
       const tabElements = tabList.querySelectorAll('[role="tab"]');
       const tabPanelElements = container.querySelectorAll('[role="tabpanel"]');
 
-      // Устанавливаем href для вкладок
       tabElements.forEach((tab, tabIndex) => {
         tab.setAttribute('href', `#${id}-tab-${listIndex}-${tabIndex}`);
         tab.setAttribute('aria-selected', tabIndex === 0 ? 'true' : 'false');
 
-        // Добавляем обработчик клика
         tab.addEventListener('click', (e) => {
           e.preventDefault();
           const index = Array.from(tabElements).indexOf(e.currentTarget);
           setActiveTabIndex(index);
 
-          // Обновляем состояние всех вкладок
           tabElements.forEach((t, i) => {
             t.setAttribute('aria-selected', i === index ? 'true' : 'false');
           });
 
-          // Обновляем видимость панелей
           tabPanelElements.forEach((panel, panelIndex) => {
             if (panelIndex === index) {
               panel.style.display = 'block';
@@ -82,7 +76,6 @@ export default function Window(props) {
         });
       });
 
-      // Устанавливаем id для панелей и управляем их видимостью
       tabPanelElements.forEach((panel, panelIndex) => {
         panel.id = `${id}-tab-${listIndex}-${panelIndex}`;
         if (panelIndex === 0) {
@@ -95,7 +88,6 @@ export default function Window(props) {
       });
     });
 
-    // Очистка обработчиков при размонтировании
     return () => {
       tabLists.forEach((tabList) => {
         const tabElements = tabList.querySelectorAll('[role="tab"]');
@@ -106,7 +98,6 @@ export default function Window(props) {
     };
   }, [id, children]);
 
-  // Обновляем видимость панелей при изменении activeTabIndex
   useEffect(() => {
     if (!windowRef.current) return;
 
@@ -124,7 +115,6 @@ export default function Window(props) {
     });
   }, [activeTabIndex]);
 
-  // Синхронизация с props
   useEffect(() => {
     setIsMaximized(initialMaximized);
     setPosition(initialPosition);
@@ -136,18 +126,14 @@ export default function Window(props) {
   // ========== Обработка touch / mouse ==========
   const getClientCoords = (e) => {
     if (e.touches) {
-      // touch событие
       return { x: e.touches[0].clientX, y: e.touches[0].clientY };
     } else {
-      // mouse событие
       return { x: e.clientX, y: e.clientY };
     }
   };
 
   const handleDragStart = (e) => {
-    if (e.target.closest('.title-bar-controls')) return;
     if (isMaximized) return;
-
     e.preventDefault();
     onBringToFront?.();
     setIsDragging(true);
@@ -162,7 +148,6 @@ export default function Window(props) {
 
   const handleResizeStart = (e, direction) => {
     if (isMaximized) return;
-
     e.preventDefault();
     e.stopPropagation();
     onBringToFront?.();
@@ -287,7 +272,6 @@ export default function Window(props) {
 
   const handleMaximizeRestore = () => {
     if (isMaximized) {
-      // Восстанавливаем исходные размеры и позицию
       setIsMaximized(false);
       setSize(originalSize);
       setPosition(originalPosition);
@@ -298,11 +282,9 @@ export default function Window(props) {
         height: originalSize.height,
       });
     } else {
-      // Сохраняем текущие размеры и позицию
       setOriginalSize(size);
       setOriginalPosition(position);
 
-      // Разворачиваем на весь экран
       setIsMaximized(true);
       setPosition({ x: 0, y: 0 });
       setSize({
@@ -327,27 +309,35 @@ export default function Window(props) {
     }
   };
 
+  // ========== Новый обработчик перетаскивания: проверяем курсор цели ==========
+  const handleWindowMouseDown = (e) => {
+    if (isMaximized) return;
+    // Не начинаем перетаскивание при клике на элементы управления окном и ручки ресайза
+    if (e.target.closest('.title-bar-controls')) return;
+    if (e.target.closest('.resize-handle')) return;
+
+    // Получаем вычисленный курсор целевого элемента
+    const targetCursor = getComputedStyle(e.target).cursor;
+    // Если курсор 'move' — значит элемент помечен как перетаскиваемый (наша замена)
+    if (targetCursor === 'move') {
+      handleDragStart(e);
+    }
+  };
+
   const handleDownload = async () => {
-    // Получаем DOM-элемент содержимого окна
     const windowBodyElement = windowRef.current?.querySelector('.window-body');
     if (!windowBodyElement) return;
 
-    // Клонируем элемент для безопасного использования
     const clonedBody = windowBodyElement.cloneNode(true);
-
-    // Убираем обработчики событий из клонированного элемента
     clonedBody.querySelectorAll('[onclick]').forEach((el) => el.removeAttribute('onclick'));
 
-    // Получаем чистый HTML содержимого
     const contentMarkup = clonedBody.innerHTML;
 
     try {
-      // Загружаем CSS файлы
       const commonCss = await fetch('/styles/98/common.css').then((r) => r.text());
       const themeFile = theme === 'dark' ? 'dark-theme.css' : 'light-theme.css';
       const themeCss = await fetch(`/styles/98/${themeFile}`).then((r) => r.text());
 
-      // Создаем полный HTML документ
       const htmlContent = `<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -367,7 +357,6 @@ export default function Window(props) {
   </div>
 
   <script>
-    // Базовая JavaScript логика для работы вкладок
     document.addEventListener('DOMContentLoaded', function() {
       const tabLists = document.querySelectorAll('[role="tablist"]');
 
@@ -376,7 +365,6 @@ export default function Window(props) {
         const tabPanels = document.querySelectorAll('[role="tabpanel"]');
 
         if (tabs.length > 0) {
-          // Показываем только активную вкладку
           tabs.forEach((tab, index) => {
             if (tab.getAttribute('aria-selected') === 'true') {
               tabPanels[index]?.style.display = 'block';
@@ -385,16 +373,13 @@ export default function Window(props) {
             }
           });
 
-          // Добавляем обработчики для переключения вкладок
           tabs.forEach((tab, index) => {
             tab.addEventListener('click', function(e) {
               e.preventDefault();
 
-              // Обновляем атрибут aria-selected
               tabs.forEach(t => t.setAttribute('aria-selected', 'false'));
               this.setAttribute('aria-selected', 'true');
 
-              // Показываем соответствующую панель
               tabPanels.forEach((panel, panelIndex) => {
                 panel.style.display = panelIndex === index ? 'block' : 'none';
               });
@@ -407,7 +392,6 @@ export default function Window(props) {
 </body>
 </html>`;
 
-      // Создаем и скачиваем файл
       const blob = new Blob([htmlContent], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -438,18 +422,17 @@ export default function Window(props) {
         width: `${size.width}px`,
         height: `${size.height}px`,
         zIndex: zIndex,
-        cursor: isDragging ? 'move' : 'default',
         display: isMinimized ? 'none' : 'flex',
         flexDirection: 'column',
       }}
       onClick={handleWindowClick}
+      onMouseDown={handleWindowMouseDown}
+      onTouchStart={handleWindowMouseDown}
     >
       {/* Title Bar */}
       <div
         ref={titleBarRef}
         className="title-bar"
-        onMouseDown={handleDragStart}
-        onTouchStart={handleDragStart}
         style={{ cursor: isMaximized ? 'default' : 'move', userSelect: 'none' }}
       >
         <div className="title-bar-text">{title}</div>
