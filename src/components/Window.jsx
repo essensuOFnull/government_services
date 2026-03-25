@@ -24,8 +24,6 @@ export default function Window(props) {
   const { theme } = useTheme();
   const windowRef = useRef(null);
   const titleBarRef = useRef(null);
-  // Храним элементы, которым мы изменили курсор, и их исходные значения
-  const cursorOverridesRef = useRef(new Map());
 
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -38,15 +36,40 @@ export default function Window(props) {
   const [originalPosition, setOriginalPosition] = useState(initialOriginalPosition || initialPosition);
   const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0 });
 
-  // Состояние для управления вкладками
   const [activeTabIndex, setActiveTabIndex] = useState(0);
 
-  // ========== Инициализация вкладок из children ==========
+  // Ref'ы для данных, которые меняются во время перетаскивания
+  const positionRef = useRef(position);
+  const sizeRef = useRef(size);
+  const dragOffsetRef = useRef(dragOffset);
+  const resizeDirectionRef = useRef(resizeDirection);
+  const resizeStartRef = useRef(resizeStart);
+  const isDraggingRef = useRef(isDragging);
+  const isResizingRef = useRef(isResizing);
+  const isMaximizedRef = useRef(isMaximized);
+  const onUpdateRef = useRef(onUpdate);
+
+  useEffect(() => {
+    positionRef.current = position;
+    sizeRef.current = size;
+    dragOffsetRef.current = dragOffset;
+    resizeDirectionRef.current = resizeDirection;
+    resizeStartRef.current = resizeStart;
+    isDraggingRef.current = isDragging;
+    isResizingRef.current = isResizing;
+    isMaximizedRef.current = isMaximized;
+    onUpdateRef.current = onUpdate;
+  });
+
+  // Синхронизация isMaximized из пропсов (только этот пропс может меняться извне)
+  useEffect(() => {
+    setIsMaximized(initialMaximized);
+  }, [initialMaximized]);
+
+  // Инициализация вкладок
   useEffect(() => {
     if (!windowRef.current) return;
-
     const container = windowRef.current;
-
     const tabLists = container.querySelectorAll('[role="tablist"]');
 
     tabLists.forEach((tabList, listIndex) => {
@@ -100,7 +123,6 @@ export default function Window(props) {
 
   useEffect(() => {
     if (!windowRef.current) return;
-
     const container = windowRef.current;
     const tabPanelElements = container.querySelectorAll('[role="tabpanel"]');
 
@@ -115,15 +137,6 @@ export default function Window(props) {
     });
   }, [activeTabIndex]);
 
-  useEffect(() => {
-    setIsMaximized(initialMaximized);
-    setPosition(initialPosition);
-    setSize({ width, height });
-    setOriginalSize(initialOriginalSize || { width, height });
-    setOriginalPosition(initialOriginalPosition || initialPosition);
-  }, [initialMaximized, initialPosition, width, height, initialOriginalSize, initialOriginalPosition]);
-
-  // ========== Обработка touch / mouse ==========
   const getClientCoords = (e) => {
     if (e.touches) {
       return { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -164,13 +177,13 @@ export default function Window(props) {
   };
 
   const updatePositionAndSize = (e) => {
-    if (isDragging && !isMaximized) {
+    if (isDraggingRef.current && !isMaximizedRef.current) {
       const coords = getClientCoords(e);
-      const newX = coords.x - dragOffset.x;
-      const newY = coords.y - dragOffset.y;
+      const newX = coords.x - dragOffsetRef.current.x;
+      const newY = coords.y - dragOffsetRef.current.y;
 
-      const maxX = window.innerWidth - size.width;
-      const maxY = window.innerHeight - size.height;
+      const maxX = window.innerWidth - sizeRef.current.width;
+      const maxY = window.innerHeight - sizeRef.current.height;
 
       const newPosition = {
         x: Math.max(0, Math.min(newX, maxX)),
@@ -178,33 +191,33 @@ export default function Window(props) {
       };
 
       setPosition(newPosition);
-      onUpdate?.({ position: newPosition });
+      onUpdateRef.current?.({ position: newPosition });
     }
 
-    if (isResizing && !isMaximized) {
+    if (isResizingRef.current && !isMaximizedRef.current) {
       const coords = getClientCoords(e);
-      const deltaX = coords.x - resizeStart.x;
-      const deltaY = coords.y - resizeStart.y;
-      const newSize = { ...size };
-      const newPosition = { ...position };
+      const deltaX = coords.x - resizeStartRef.current.x;
+      const deltaY = coords.y - resizeStartRef.current.y;
+      const newSize = { ...sizeRef.current };
+      const newPosition = { ...positionRef.current };
 
       const minWidth = 200;
       const minHeight = 150;
 
-      if (resizeDirection.includes('e')) {
-        newSize.width = Math.max(minWidth, resizeStart.width + deltaX);
+      if (resizeDirectionRef.current.includes('e')) {
+        newSize.width = Math.max(minWidth, resizeStartRef.current.width + deltaX);
       }
-      if (resizeDirection.includes('w')) {
-        const newWidth = Math.max(minWidth, resizeStart.width - deltaX);
+      if (resizeDirectionRef.current.includes('w')) {
+        const newWidth = Math.max(minWidth, resizeStartRef.current.width - deltaX);
         const widthDiff = newSize.width - newWidth;
         newSize.width = newWidth;
         newPosition.x += widthDiff;
       }
-      if (resizeDirection.includes('s')) {
-        newSize.height = Math.max(minHeight, resizeStart.height + deltaY);
+      if (resizeDirectionRef.current.includes('s')) {
+        newSize.height = Math.max(minHeight, resizeStartRef.current.height + deltaY);
       }
-      if (resizeDirection.includes('n')) {
-        const newHeight = Math.max(minHeight, resizeStart.height - deltaY);
+      if (resizeDirectionRef.current.includes('n')) {
+        const newHeight = Math.max(minHeight, resizeStartRef.current.height - deltaY);
         const heightDiff = newSize.height - newHeight;
         newSize.height = newHeight;
         newPosition.y += heightDiff;
@@ -215,7 +228,7 @@ export default function Window(props) {
 
       setSize(newSize);
       setPosition(newPosition);
-      onUpdate?.({
+      onUpdateRef.current?.({
         width: newSize.width,
         height: newSize.height,
         position: newPosition,
@@ -224,19 +237,20 @@ export default function Window(props) {
   };
 
   const handleEnd = () => {
-    if (isDragging || isResizing) {
-      onUpdate?.({
-        position,
-        width: size.width,
-        height: size.height,
+    if (isDraggingRef.current || isResizingRef.current) {
+      onUpdateRef.current?.({
+        position: positionRef.current,
+        width: sizeRef.current.width,
+        height: sizeRef.current.height,
       });
     }
     setIsDragging(false);
     setIsResizing(false);
   };
 
-  // Глобальные обработчики (мышь + touch)
   useEffect(() => {
+    if (!isDragging && !isResizing) return;
+
     const handleMouseMove = (e) => updatePositionAndSize(e);
     const handleMouseUp = () => handleEnd();
 
@@ -246,22 +260,19 @@ export default function Window(props) {
     };
     const handleTouchEnd = () => handleEnd();
 
-    if (isDragging || isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.addEventListener('touchmove', handleTouchMove, { passive: false });
-      document.addEventListener('touchend', handleTouchEnd);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd);
 
-      return () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-        document.removeEventListener('touchmove', handleTouchMove);
-        document.removeEventListener('touchend', handleTouchEnd);
-      };
-    }
-  }, [isDragging, isResizing, dragOffset, resizeDirection, position, size, isMaximized, onUpdate, resizeStart]);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isDragging, isResizing]);
 
-  // ========== Обработчики кнопок ==========
   const handleClose = () => {
     onClose?.(id);
   };
@@ -309,16 +320,12 @@ export default function Window(props) {
     }
   };
 
-  // ========== Новый обработчик перетаскивания: проверяем курсор цели ==========
   const handleWindowMouseDown = (e) => {
     if (isMaximized) return;
-    // Не начинаем перетаскивание при клике на элементы управления окном и ручки ресайза
     if (e.target.closest('.title-bar-controls')) return;
     if (e.target.closest('.resize-handle')) return;
 
-    // Получаем вычисленный курсор целевого элемента
     const targetCursor = getComputedStyle(e.target).cursor;
-    // Если курсор 'move' — значит элемент помечен как перетаскиваемый (наша замена)
     if (targetCursor === 'move') {
       handleDragStart(e);
     }
@@ -429,7 +436,6 @@ export default function Window(props) {
       onMouseDown={handleWindowMouseDown}
       onTouchStart={handleWindowMouseDown}
     >
-      {/* Title Bar */}
       <div
         ref={titleBarRef}
         className="title-bar"
@@ -449,7 +455,6 @@ export default function Window(props) {
         )}
       </div>
 
-      {/* Window children */}
       <div
         className="window-body"
         style={{
@@ -466,7 +471,6 @@ export default function Window(props) {
         {children}
       </div>
 
-      {/* Resize Handles */}
       {!isMaximized && (
         <>
           <div
