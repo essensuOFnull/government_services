@@ -28,7 +28,7 @@ export function MessageList({
     <div className="messages-list" ref={messageListRef}>
       {allMessages.map(msg => (
         <Message
-          key={msg._key}
+          key={`${msg.isPending ? 'pending' : 'real'}-${msg.id}`}
           msg={msg}
           fileMeta={fileMeta}
           users={users}

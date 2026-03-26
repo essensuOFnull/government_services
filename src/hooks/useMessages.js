@@ -206,27 +206,32 @@ export function useMessages({
 
   // Подгрузка старых сообщений при скролле (функция для useScrollPagination)
   const loadMoreMessages = useCallback(async () => {
-    if (!hasMore || !currentConversation) return;
-    try {
-      const response = await fetch(
-        `/api/messenger/conversation/${currentConversation.id}/messages?limit=${pageSize}&offset=${offset}`,
-        { headers: { 'x-user-id': userId } }
-      );
-      const data = await response.json();
-      const msgs = data.messages || [];
-      if (msgs.length > 0) {
-        setMessages(prev => [...msgs, ...prev]);
-        setOffset(prev => prev + msgs.length);
-        if (msgs.length < pageSize) setHasMore(false);
-        return msgs;
-      } else {
-        setHasMore(false);
-        return [];
-      }
-    } catch (error) {
-      console.error('Ошибка загрузки старых сообщений:', error);
-      return [];
-    }
+	if (!hasMore || !currentConversation) return [];
+	try {
+		const response = await fetch(
+		`/api/messenger/conversation/${currentConversation.id}/messages?limit=${pageSize}&offset=${offset}`,
+		{ headers: { 'x-user-id': userId } }
+		);
+		const data = await response.json();
+		const msgs = data.messages || [];
+		if (msgs.length > 0) {
+		setMessages(prev => {
+			const existingIds = new Set(prev.map(m => m.id));
+			const uniqueNewMsgs = msgs.filter(msg => !existingIds.has(msg.id));
+			if (uniqueNewMsgs.length === 0) return prev;
+			return [...uniqueNewMsgs, ...prev];
+		});
+		setOffset(prev => prev + msgs.length);
+		if (msgs.length < pageSize) setHasMore(false);
+		return msgs;
+		} else {
+		setHasMore(false);
+		return [];
+		}
+	} catch (error) {
+		console.error('Ошибка загрузки старых сообщений:', error);
+		return [];
+	}
   }, [currentConversation, hasMore, offset, pageSize, userId]);
 
   // Обновление метаданных файлов, которых нет в fileMeta
@@ -254,39 +259,43 @@ export function useMessages({
 
   // Объединённый список сообщений (реальные + pending)
   const allMessages = useMemo(() => {
-	const real = messages.map(m => ({ ...m, isPending: false, _key: `real-${m.id}` }));
+	const real = messages.map(m => ({ ...m, isPending: false }));
 	const pending = pendingMessages.map(p => ({
 		...p,
 		id: p.localId,
 		isPending: true,
 		created_at: p.created_at,
-		_key: `pending-${p.localId}`,
 	}));
 	return [...real, ...pending].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   }, [messages, pendingMessages]);
 
   // Обработка входящих сообщений от WebSocket
   const handleNewMessage = useCallback((msg) => {
-    if (msg.temporaryId) {
-      // Это ответ на отправленное сообщение – удаляем из pending и добавляем реальное
-      const exists = pendingMessagesRef.current.some(p => p.localId === msg.temporaryId);
-      if (exists) {
-        setPendingMessages(prev => prev.filter(p => p.localId !== msg.temporaryId));
-        setMessages(prev => [...prev, msg]);
-      } else {
-        // Сообщение для получателя
-        if (currentConversation?.id === msg?.conversation_id) {
-          setMessages(prev => [...prev, msg]);
-        }
-      }
-    } else {
-      // Обычное сообщение
-      if (currentConversation?.id === msg?.conversation_id) {
-        setMessages(prev => [...prev, msg]);
-      }
-    }
-    // Возвращаем сообщение для возможной обработки вне хука (например, звук)
-    return msg;
+	if (msg.temporaryId) {
+		const existsInPending = pendingMessagesRef.current.some(p => p.localId === msg.temporaryId);
+		if (existsInPending) {
+		setPendingMessages(prev => prev.filter(p => p.localId !== msg.temporaryId));
+		setMessages(prev => {
+			if (prev.some(m => m.id === msg.id)) return prev;
+			return [...prev, msg];
+		});
+		} else {
+		if (currentConversation?.id === msg?.conversation_id) {
+			setMessages(prev => {
+			if (prev.some(m => m.id === msg.id)) return prev;
+			return [...prev, msg];
+			});
+		}
+		}
+	} else {
+		if (currentConversation?.id === msg?.conversation_id) {
+		setMessages(prev => {
+			if (prev.some(m => m.id === msg.id)) return prev;
+			return [...prev, msg];
+		});
+		}
+	}
+	return msg;
   }, [currentConversation]);
 
   const handleMessageDeleted = useCallback((messageId, conversationId) => {
