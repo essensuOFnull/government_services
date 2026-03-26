@@ -8,6 +8,8 @@ import ProfileWindow from './auth/ProfileWindow';
 import MenuWindow from './MenuWindow';
 import { loadWallpaper, applyWallpaper, loadWallpaperMode } from '../utils/wallpaperUtils';
 
+import { AvatarCacheProvider } from '../contexts/AvatarCacheContext';
+
 function MainApp() {
   /*применяем фон рабочего стола*/
   useEffect(() => {
@@ -74,7 +76,7 @@ function MainApp() {
   }
 
   return (
-    <>
+    <AvatarCacheProvider>
       {windows.map(windowData => (
         <Window
           key={windowData.id}
@@ -87,24 +89,8 @@ function MainApp() {
           {windowData.children}
         </Window>
       ))}
-      <Taskbar 
-        windows={windows}
-        onWindowClick={bringToFront}
-        onClickMainButton={() => {
-          openWindow({
-            title: 'Меню услуг',
-            children: <MenuWindow />,
-          });
-        }}
-        user={user}
-        onProfileClick={() => {
-          openWindow({
-            title: 'Профиль',
-            children: <ProfileWindow />,
-          });
-        }}
-      />
-    </>
+      <Taskbar/>
+    </AvatarCacheProvider>
   );
 }
 

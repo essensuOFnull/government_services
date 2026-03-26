@@ -1,7 +1,9 @@
 import { useRef, useEffect, useCallback } from 'react';
+import { useAvatarCache } from '../contexts/AvatarCacheContext';
 
 export function useMessengerWebSocket(userId, onMessage) {
   const wsRef = useRef(null);
+  const cache = useAvatarCache(); // получаем кэш из контекста
 
   useEffect(() => {
     if (!userId) return;
@@ -18,21 +20,35 @@ export function useMessengerWebSocket(userId, onMessage) {
       return;
     }
 
-    wsRef.current.addEventListener('open', () => {
+    // Обработчик для сообщений об обновлении аватарки
+    const handleAvatarUpdate = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'avatar_updated') {
+          const { userId: updatedUserId } = data;
+          cache.notifyUpdate(updatedUserId);
+        }
+      } catch (err) {
+        console.error('Ошибка парсинга сообщения WebSocket:', err);
+      }
+    };
 
+    wsRef.current.addEventListener('open', () => {
+      // можно отправить что-то, если нужно
     });
 
     wsRef.current.addEventListener('message', (event) => {
+      handleAvatarUpdate(event); // сначала обрабатываем аватарки
       try {
         const message = JSON.parse(event.data);
-        onMessage(message);
+        onMessage(message); // потом передаём дальше
       } catch (err) {
-        console.error('Ошибка парсинга сообщения WebSocket:', err);
+        // уже обработано в handleAvatarUpdate, можно игнорировать
       }
     });
 
     wsRef.current.addEventListener('close', () => {
-
+      // логика переподключения
     });
 
     return () => {
@@ -40,7 +56,7 @@ export function useMessengerWebSocket(userId, onMessage) {
         wsRef.current.close();
       }
     };
-  }, [userId, onMessage]);
+  }, [userId, onMessage, cache]); // добавили cache в зависимости
 
   const send = useCallback((data) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {

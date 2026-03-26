@@ -3,7 +3,7 @@ import { useAuthContext } from './AuthContext';
 import { useWindowsManager } from '../../hooks/useWindowsManager';
 import Avatar from '../Avatar';
 
-const ProfileWindow = ({ onClose }) => {
+const ProfileWindow = ({ onClose, wsRef, cache }) => {
   const { 
     user, 
     logout, 
@@ -109,6 +109,16 @@ const ProfileWindow = ({ onClose }) => {
         if (updateUser) {
           updateUser({ ...user, avatar_file_id: json.file.id });
         }
+        // Отправляем WebSocket-сообщение о том, что аватарка изменилась
+        if (wsRef?.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: 'avatar_updated',
+            userId: user.id
+          }));
+        }
+        // Инвалидируем кэш и уведомляем подписчиков
+        cache?.invalidateCache(user.id);
+        cache?.notifyUpdate(user.id);
       } else {
         setError(json.message || 'Ошибка загрузки аватарки');
       }
@@ -141,6 +151,15 @@ const ProfileWindow = ({ onClose }) => {
         if (updateUser) {
           updateUser({ ...user, avatar_file_id: null });
         }
+        // Отправляем уведомление об удалении (можно тоже avatar_updated)
+        if (wsRef?.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: 'avatar_updated',
+            userId: user.id
+          }));
+        }
+        cache?.invalidateCache(user.id);
+        cache?.notifyUpdate(user.id);
       } else {
         setError(json.message || 'Ошибка удаления аватарки');
       }

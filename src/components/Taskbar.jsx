@@ -3,24 +3,36 @@ import { useTheme } from '../contexts/ThemeContext';
 import ProfileWindow from './auth/ProfileWindow';
 import MenuWindow from './MenuWindow';
 import { AuthProvider, useAuthContext } from './auth/AuthContext';
+import { useAvatarCache } from '../contexts/AvatarCacheContext';
+import { useMessengerWebSocket } from '../hooks/useMessengerWebSocket';
+import { useCallback } from 'react';
 
 export default function Taskbar(props) {
     const { openWindow, closeWindow } = useWindowsManager();
     const { theme, toggleTheme } = useTheme();
-	const { user, loading, isAuthenticated } = useAuthContext();
+    const { user, loading, isAuthenticated } = useAuthContext();
 
+    // Заглушка для входящих сообщений WebSocket (можно расширить позже)
+    const handleIncomingMessage = useCallback((message) => {
+        // Обработка других типов сообщений, если понадобится
+        console.log('Получено сообщение WebSocket:', message);
+    }, []);
+
+    const { wsRef } = useMessengerWebSocket(user?.id, handleIncomingMessage);
+    const cache = useAvatarCache();
+    
     return (
         <footer className='taskbar'>
-			{isAuthenticated && (
-				<button onClick={() => {
-					openWindow({
-						title: 'Меню услуг',
-						children: <MenuWindow />,
-					})
-				}}>Открыть меню</button>
-			)}
+            {isAuthenticated && (
+                <button onClick={() => {
+                    openWindow({
+                        title: 'Меню услуг',
+                        children: <MenuWindow />,
+                    })
+                }}>Открыть меню</button>
+            )}
             
-            <img src="icon.svg" style={{ width: "32px", height: "32px" }} alt="icon"></img>
+            <img src="icon.svg" style={{ width: "32px", height: "32px" }} alt="icon" />
             <p>Госуслуги Подбредья</p>
             
             <div className="taskbar-windows status-field-border">
@@ -41,19 +53,22 @@ export default function Taskbar(props) {
             >
                 {theme === 'light' ? '🌙 Тёмная тема' : '☀️ Светлая тема'}
             </button>
-			{isAuthenticated && (
-				<button
-					onClick={() => {
-						openWindow({
-							title: 'Профиль',
-							children: <ProfileWindow />,
-						})
-					}}
-					style={{ marginRight: '16px' }}
-				>
-					Профиль
-				</button>
-			)}
+            {isAuthenticated && (
+                <button
+                    onClick={() => {
+                        openWindow({
+                            title: 'Профиль',
+                            children: <ProfileWindow 
+                                wsRef={wsRef}
+                                cache={cache}
+                            />,
+                        })
+                    }}
+                    style={{ marginRight: '16px' }}
+                >
+                    Профиль
+                </button>
+            )}
         </footer>
     );
 }
