@@ -105,18 +105,11 @@ const ProfileWindow = ({ onClose, wsRef, cache }) => {
       const json = await response.json();
       if (response.ok && json.success) {
         setMessage('Аватарка загружена успешно');
-        setAvatarRefresh(prev => prev + 1);
-        if (updateUser) {
-          updateUser({ ...user, avatar_file_id: json.file.id });
-        }
-        // Отправляем WebSocket-сообщение о том, что аватарка изменилась
+        // setAvatarRefresh(prev => prev + 1); // Удаляем
+        if (updateUser) updateUser({ ...user, avatar_file_id: json.file.id });
         if (wsRef?.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({
-            type: 'avatar_updated',
-            userId: user.id
-          }));
+          wsRef.current.send(JSON.stringify({ type: 'avatar_updated', userId: user.id }));
         }
-        // Инвалидируем кэш и уведомляем подписчиков
         cache?.invalidateCache(user.id);
         cache?.notifyUpdate(user.id);
       } else {
@@ -147,16 +140,10 @@ const ProfileWindow = ({ onClose, wsRef, cache }) => {
       const json = await response.json();
       if (response.ok && json.success) {
         setMessage('Аватарка удалена');
-        setAvatarRefresh(prev => prev + 1);
-        if (updateUser) {
-          updateUser({ ...user, avatar_file_id: null });
-        }
-        // Отправляем уведомление об удалении (можно тоже avatar_updated)
+        // setAvatarRefresh(prev => prev + 1); // Удаляем
+        if (updateUser) updateUser({ ...user, avatar_file_id: null });
         if (wsRef?.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({
-            type: 'avatar_updated',
-            userId: user.id
-          }));
+          wsRef.current.send(JSON.stringify({ type: 'avatar_updated', userId: user.id }));
         }
         cache?.invalidateCache(user.id);
         cache?.notifyUpdate(user.id);
@@ -199,7 +186,6 @@ const ProfileWindow = ({ onClose, wsRef, cache }) => {
             userId={user.id} 
             username={user.username} 
             size={80}
-            key={avatarRefresh}
           />
         </div>
         <p><strong>ID:</strong> {user.id}</p>

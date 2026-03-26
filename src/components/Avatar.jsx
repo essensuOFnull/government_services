@@ -4,8 +4,8 @@ import { useAvatarCache } from '../contexts/AvatarCacheContext';
 export default function Avatar({ userId, username, size = 40, style = {}, cacheEnabled = true }) {
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [loaded, setLoaded] = useState(false);
-  const currentUrlRef = useRef(null);      // текущий активный URL
-  const pendingUrlRef = useRef(null);      // старый URL, ожидающий отзыва
+  const currentUrlRef = useRef(null);
+  const pendingUrlRef = useRef(null);
   const abortControllerRef = useRef(null);
   const cache = useAvatarCache();
 
@@ -24,8 +24,6 @@ export default function Avatar({ userId, username, size = 40, style = {}, cacheE
     if (abortControllerRef.current) abortControllerRef.current.abort();
 
     setLoaded(false);
-
-    // Сохраняем текущий URL как pending (будет отозван после загрузки нового)
     if (currentUrlRef.current) {
       pendingUrlRef.current = currentUrlRef.current;
       currentUrlRef.current = null;
@@ -37,7 +35,6 @@ export default function Avatar({ userId, username, size = 40, style = {}, cacheE
 
     try {
       let blob = null;
-
       if (!forceRefresh && cacheEnabled && cache.getCachedBlob) {
         blob = cache.getCachedBlob(userId);
       }
@@ -47,12 +44,11 @@ export default function Avatar({ userId, username, size = 40, style = {}, cacheE
         currentUrlRef.current = url;
         setAvatarUrl(url);
         setLoaded(true);
-        // Фоновая проверка обновлений (не дожидаемся)
         loadFromServer(userId, controller.signal)
           .then(result => {
             if (result?.blob && blob.size !== result.blob.size) {
               const newUrl = URL.createObjectURL(result.blob);
-              pendingUrlRef.current = currentUrlRef.current; // текущий становится старым
+              pendingUrlRef.current = currentUrlRef.current;
               currentUrlRef.current = newUrl;
               setAvatarUrl(newUrl);
               cache.setCachedBlob(userId, result.blob, result.timestamp);
@@ -83,6 +79,11 @@ export default function Avatar({ userId, username, size = 40, style = {}, cacheE
     }
   }, [cacheEnabled, cache, loadFromServer]);
 
+  const loadAvatarRef = useRef(loadAvatar);
+  useEffect(() => {
+    loadAvatarRef.current = loadAvatar;
+  }, [loadAvatar]);
+
   const handleImageLoad = useCallback(() => {
     if (pendingUrlRef.current) {
       URL.revokeObjectURL(pendingUrlRef.current);
@@ -91,7 +92,6 @@ export default function Avatar({ userId, username, size = 40, style = {}, cacheE
   }, []);
 
   const handleImageError = useCallback(() => {
-    // Если новое изображение не загрузилось, отзываем его URL и возвращаем старое (если есть)
     if (currentUrlRef.current && !loaded) {
       URL.revokeObjectURL(currentUrlRef.current);
       currentUrlRef.current = pendingUrlRef.current;
@@ -113,14 +113,18 @@ export default function Avatar({ userId, username, size = 40, style = {}, cacheE
     };
   }, [userId, loadAvatar]);
 
-  // Подписка на обновления аватарки
   useEffect(() => {
     if (!userId || !cache.subscribe) return;
-    const unsubscribe = cache.subscribe(userId, (updatedUserId) => {
-      if (updatedUserId === userId) loadAvatar(userId, true);
-    });
+
+    const handleUpdate = (updatedUserId) => {
+      if (updatedUserId === userId) {
+        loadAvatarRef.current(userId, true);
+      }
+    };
+
+    const unsubscribe = cache.subscribe(userId, handleUpdate);
     return unsubscribe;
-  }, [userId, cache.subscribe, loadAvatar]);
+  }, [userId, cache.subscribe]);
 
   const initials = username ? username.charAt(0).toUpperCase() : '?';
 
@@ -159,6 +163,8 @@ export default function Avatar({ userId, username, size = 40, style = {}, cacheE
       <img
         src={avatarUrl}
         alt={username}
+        onLoad={handleImageLoad}
+        onError={handleImageError}
         style={{
           ...containerStyle,
           width: size,
