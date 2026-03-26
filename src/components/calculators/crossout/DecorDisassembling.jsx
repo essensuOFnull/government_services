@@ -38,8 +38,6 @@ export default function DecorDisassembling() {
 	// Инициализация WebSocket и загрузка данных
 	useEffect(() => {
 		const initializeComponent = async () => {
-			console.log('Initializing crossout component, user:', user);
-
 			if (!user?.id) {
 				console.warn('User not authenticated yet');
 				return;
@@ -47,7 +45,6 @@ export default function DecorDisassembling() {
 
 			// Загружаем последние цены из базы
 			try {
-				console.log('Fetching latest prices...');
 				const response = await fetch('/api/messenger/crossout/get-latest-prices', {
 					method: 'POST',
 					headers: {
@@ -58,8 +55,6 @@ export default function DecorDisassembling() {
 						resources: [0, 1, 2, 3, 4, 5]
 					})
 				});
-
-				console.log('Response status:', response.status);
 				
 				if (!response.ok) {
 					console.error('Response error:', response.status, response.statusText);
@@ -69,7 +64,6 @@ export default function DecorDisassembling() {
 				}
 
 				const data = await response.json();
-				console.log('Loaded prices data:', data);
 
 				if (data.success && data.data) {
 					const history = {};
@@ -96,7 +90,6 @@ export default function DecorDisassembling() {
 					setResources(newResources);
 					setResourcesBeforeEdit(JSON.parse(JSON.stringify(newResources)));
 					setPriceHistory(history);
-					console.log('Resources updated');
 				}
 			} catch (error) {
 				console.error('Error loading prices:', error);
@@ -111,7 +104,7 @@ export default function DecorDisassembling() {
 					const ws = new WebSocket(wsUrl);
 					
 					ws.onopen = () => {
-						console.log('WebSocket connected for Crossout updates');
+
 					};
 
 					ws.onmessage = (event) => {
@@ -130,7 +123,6 @@ export default function DecorDisassembling() {
 					};
 
 					ws.onclose = () => {
-						console.log('WebSocket disconnected');
 						wsRef.current = null;
 					};
 
@@ -179,8 +171,6 @@ export default function DecorDisassembling() {
 	// Функция для отправки обновлений на сервер
 	const updatePrice = async (resourceIndex, fieldType, value) => {
 		try {
-			console.log('Updating price:', { resourceIndex, fieldType, value, userId: user?.id });
-
 			// Оптимистичное обновление UI сразу
 			const changedAt = Date.now();
 			setPriceHistory(prev => ({
@@ -205,8 +195,6 @@ export default function DecorDisassembling() {
 				})
 			});
 
-			console.log('Save price response:', response.status);
-
 			if (!response.ok) {
 				const errorText = await response.text();
 				console.error('Error saving price:', response.status, errorText);
@@ -214,7 +202,6 @@ export default function DecorDisassembling() {
 			}
 
 			const data = await response.json();
-			console.log('Price saved successfully:', data);
 
 			// Обновляем с реальным временем с сервера
 			setPriceHistory(prev => ({
@@ -238,11 +225,8 @@ export default function DecorDisassembling() {
 		const previousValue = resourcesBeforeEdit ? resourcesBeforeEdit[resourceIndex][fieldIdx] : null;
 		const parsedPrevious = parseFloat(previousValue);
 
-		console.log('Input blur:', { resourceIndex, fieldType, parsedCurrent, parsedPrevious, previousValue });
-
 		// Сохраняем только если значение действительно изменилось
 		if (parsedCurrent !== parsedPrevious) {
-			console.log('Value changed, updating price');
 			updatePrice(resourceIndex, fieldType, parsedCurrent);
 			// Обновляем "до редактирования" значение, чтобы следующее сравнение было корректным
 			setResourcesBeforeEdit(prev => {
@@ -255,7 +239,7 @@ export default function DecorDisassembling() {
 				return updated;
 			});
 		} else {
-			console.log('Value not changed, skipping update');
+
 		}
 	};
 

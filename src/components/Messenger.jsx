@@ -173,7 +173,7 @@ export function Messenger({ userId }) {
         if (handleChatClearedRef.current) handleChatClearedRef.current(data.conversationId);
         break;
       default:
-        console.log('Неизвестный тип сообщения:', type);
+        console.error('Неизвестный тип сообщения:', type);
     }
   }, []); // пустой массив зависимостей – стабильный колбэк
 

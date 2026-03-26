@@ -39,7 +39,6 @@ export default function Avatar({
             urlRef.current = cachedUrl;
             setAvatarUrl(cachedUrl);
             setLoaded(true);
-            console.log('Avatar loaded from cache:', key);
             return;
           }
         }
@@ -65,12 +64,10 @@ export default function Avatar({
         urlRef.current = url;
         setAvatarUrl(url);
         setLoaded(true);
-        console.log('Avatar loaded from server:', key);
 
         // 3. Сохраняем в кэш
         if (cacheEnabled && saveToCache) {
           await saveToCache(key, blob);
-          console.log('Avatar saved to cache:', key);
         }
       } catch (error) {
         if (error.name !== 'AbortError') {

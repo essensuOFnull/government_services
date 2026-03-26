@@ -72,7 +72,6 @@ export function useFileCache() {
           await savedHandle.getFileHandle('.test', { create: true });
           setCacheRoot(savedHandle);
           setCacheEnabled(true);
-          console.log('Cache restored from IndexedDB');
           setIsCacheReady(true);
           return;
         }

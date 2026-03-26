@@ -19,7 +19,7 @@ export function useMessengerWebSocket(userId, onMessage) {
     }
 
     wsRef.current.addEventListener('open', () => {
-      console.log('✅ WebSocket подключен');
+
     });
 
     wsRef.current.addEventListener('message', (event) => {
@@ -32,7 +32,7 @@ export function useMessengerWebSocket(userId, onMessage) {
     });
 
     wsRef.current.addEventListener('close', () => {
-      console.log('❌ WebSocket отключен');
+
     });
 
     return () => {

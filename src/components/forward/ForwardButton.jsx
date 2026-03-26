@@ -45,8 +45,6 @@ export default function ForwardButton({ msg, wsRef }) {
         }));
         
         setShow(false);
-        // Можно показать уведомление об успешной пересылке
-        console.log('Сообщение пересылается...');
       } else {
         setError('WebSocket не подключен');
       }

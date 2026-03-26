@@ -11,7 +11,6 @@ const api = {
   },
   async request(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
-    console.log(`API request -> ${options.method || 'GET'} ${url}`);
 
     // Читаем userId из sessionStorage
     let userId = null;
@@ -50,8 +49,6 @@ const api = {
       } else {
         data = await response.text();
       }
-
-      console.log(`API response <- ${response.status} ${url}`, data);
 
       if (!response.ok) {
         const msg = (data && data.message) ? data.message : `HTTP ${response.status}`;
