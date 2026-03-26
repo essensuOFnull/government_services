@@ -3,7 +3,14 @@ import { useAvatarCache } from '../contexts/AvatarCacheContext';
 
 export function useMessengerWebSocket(userId, onMessage) {
   const wsRef = useRef(null);
-  const cache = useAvatarCache(); // получаем кэш из контекста
+  const cache = useAvatarCache();
+  const onMessageRef = useRef(onMessage);
+  const cacheRef = useRef(cache);
+
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+    cacheRef.current = cache;
+  }, [onMessage, cache]);
 
   useEffect(() => {
     if (!userId) return;
@@ -12,57 +19,36 @@ export function useMessengerWebSocket(userId, onMessage) {
     const host = window.location.host || `${window.location.hostname}:${window.location.port || 22869}`;
     const wsUrl = `${scheme}://${host}/ws/messenger?userId=${encodeURIComponent(userId)}`;
 
-    try {
-      wsRef.current = new WebSocket(wsUrl);
-    } catch (err) {
-      console.error('WebSocket init error:', err);
-      wsRef.current = null;
-      return;
-    }
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
 
-    // Обработчик для сообщений об обновлении аватарки
-    const handleAvatarUpdate = (event) => {
+    const handleMessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'avatar_updated') {
-          const { userId: updatedUserId } = data;
-          cache.notifyUpdate(updatedUserId);
+          cacheRef.current?.notifyUpdate(data.userId);
         }
+        onMessageRef.current(data);
       } catch (err) {
-        console.error('Ошибка парсинга сообщения WebSocket:', err);
+        console.error('Ошибка парсинга сообщения:', err);
       }
     };
 
-    wsRef.current.addEventListener('open', () => {
-      // можно отправить что-то, если нужно
-    });
-
-    wsRef.current.addEventListener('message', (event) => {
-      handleAvatarUpdate(event); // сначала обрабатываем аватарки
-      try {
-        const message = JSON.parse(event.data);
-        onMessage(message); // потом передаём дальше
-      } catch (err) {
-        // уже обработано в handleAvatarUpdate, можно игнорировать
-      }
-    });
-
-    wsRef.current.addEventListener('close', () => {
-      // логика переподключения
-    });
+    ws.addEventListener('open', () => {});
+    ws.addEventListener('message', handleMessage);
+    ws.addEventListener('close', () => {});
 
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
+      ws.close();
+      wsRef.current = null;
     };
-  }, [userId, onMessage, cache]); // добавили cache в зависимости
+  }, [userId]); // теперь зависимость только userId
 
   const send = useCallback((data) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(data));
     } else {
-      console.warn('WebSocket не открыт, сообщение не отправлено');
+      console.warn('WebSocket не открыт');
     }
   }, []);
 

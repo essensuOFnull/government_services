@@ -1,33 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAvatarCache } from '../contexts/AvatarCacheContext';
 
-export default function Avatar({
-  userId,
-  username,
-  size = 40,
-  style = {},
-  cacheEnabled = true,
-  getCachedFile, // можно оставить для совместимости, но будем использовать контекст
-  saveToCache,
-}) {
+export default function Avatar({ userId, username, size = 40, style = {}, cacheEnabled = true }) {
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [loaded, setLoaded] = useState(false);
-  const urlRef = useRef(null);
+  const currentUrlRef = useRef(null);      // текущий активный URL
+  const pendingUrlRef = useRef(null);      // старый URL, ожидающий отзыва
   const abortControllerRef = useRef(null);
   const cache = useAvatarCache();
 
-  // Функция загрузки с сервера
   const loadFromServer = useCallback(async (userId, signal) => {
-    const response = await fetch(`/api/messenger/avatar/${encodeURIComponent(userId)}`, {
-      signal,
-      headers: {
-        // Можно добавить If-Modified-Since, если сервер поддерживает
-      }
-    });
+    const response = await fetch(`/api/messenger/avatar/${encodeURIComponent(userId)}`, { signal });
     if (!response.ok) {
-      if (response.status === 404) {
-        return null;
-      }
+      if (response.status === 404) return null;
       throw new Error(`HTTP ${response.status}`);
     }
     const blob = await response.blob();
@@ -35,17 +20,16 @@ export default function Avatar({
     return { blob, timestamp };
   }, []);
 
-  // Загрузка аватарки (с учётом кэша и фонового обновления)
   const loadAvatar = useCallback(async (userId, forceRefresh = false) => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    if (urlRef.current) {
-      URL.revokeObjectURL(urlRef.current);
-      urlRef.current = null;
-    }
+    if (abortControllerRef.current) abortControllerRef.current.abort();
 
     setLoaded(false);
+
+    // Сохраняем текущий URL как pending (будет отозван после загрузки нового)
+    if (currentUrlRef.current) {
+      pendingUrlRef.current = currentUrlRef.current;
+      currentUrlRef.current = null;
+    }
     setAvatarUrl(null);
 
     const controller = new AbortController();
@@ -53,54 +37,36 @@ export default function Avatar({
 
     try {
       let blob = null;
-      let timestamp = null;
 
-      // 1. Проверяем кэш, если не принудительное обновление
       if (!forceRefresh && cacheEnabled && cache.getCachedBlob) {
-        const cached = cache.getCachedBlob(userId);
-        if (cached) {
-          blob = cached;
-          // показываем кэш сразу
-          const url = URL.createObjectURL(blob);
-          urlRef.current = url;
-          setAvatarUrl(url);
-          setLoaded(true);
-        }
+        blob = cache.getCachedBlob(userId);
       }
 
-      // 2. Фоновый запрос для проверки актуальности (всегда, если нет forceRefresh)
-      // Если forceRefresh = true, то не показываем кэш, а грузим заново
-      if (!forceRefresh && blob) {
-        // Загружаем свежие данные в фоне, но без ожидания
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        currentUrlRef.current = url;
+        setAvatarUrl(url);
+        setLoaded(true);
+        // Фоновая проверка обновлений (не дожидаемся)
         loadFromServer(userId, controller.signal)
-          .then(async (result) => {
-            if (result && result.blob) {
-              // Сравниваем blob? Можно по размеру/хешу, но проще по timestamp
-              // Если изменился, обновляем
-              if (!blob || blob.size !== result.blob.size) {
-                // Обновляем кэш и отображение
-                const newUrl = URL.createObjectURL(result.blob);
-                // заменяем старый URL
-                if (urlRef.current) {
-                  URL.revokeObjectURL(urlRef.current);
-                }
-                urlRef.current = newUrl;
-                setAvatarUrl(newUrl);
-                cache.setCachedBlob(userId, result.blob, result.timestamp);
-              }
+          .then(result => {
+            if (result?.blob && blob.size !== result.blob.size) {
+              const newUrl = URL.createObjectURL(result.blob);
+              pendingUrlRef.current = currentUrlRef.current; // текущий становится старым
+              currentUrlRef.current = newUrl;
+              setAvatarUrl(newUrl);
+              cache.setCachedBlob(userId, result.blob, result.timestamp);
             }
           })
-          .catch(err => {
-            if (err.name !== 'AbortError') console.error('Фоновая проверка аватарки:', err);
-          });
+          .catch(err => { if (err.name !== 'AbortError') console.error(err); });
         return;
       }
 
-      // 3. Нет кэша или forceRefresh — грузим синхронно
       const result = await loadFromServer(userId, controller.signal);
-      if (result && result.blob) {
+      if (result?.blob) {
         const url = URL.createObjectURL(result.blob);
-        urlRef.current = url;
+        pendingUrlRef.current = currentUrlRef.current;
+        currentUrlRef.current = url;
         setAvatarUrl(url);
         setLoaded(true);
         if (cacheEnabled && cache.setCachedBlob) {
@@ -117,35 +83,44 @@ export default function Avatar({
     }
   }, [cacheEnabled, cache, loadFromServer]);
 
-  // Подписка на обновления аватарки через WebSocket
-  useEffect(() => {
-    if (!userId || !cache.subscribe) return;
+  const handleImageLoad = useCallback(() => {
+    if (pendingUrlRef.current) {
+      URL.revokeObjectURL(pendingUrlRef.current);
+      pendingUrlRef.current = null;
+    }
+  }, []);
 
-    const handleAvatarUpdate = (updatedUserId) => {
-      if (updatedUserId === userId) {
-        // Принудительно обновляем, игнорируя кэш
-        loadAvatar(userId, true);
+  const handleImageError = useCallback(() => {
+    // Если новое изображение не загрузилось, отзываем его URL и возвращаем старое (если есть)
+    if (currentUrlRef.current && !loaded) {
+      URL.revokeObjectURL(currentUrlRef.current);
+      currentUrlRef.current = pendingUrlRef.current;
+      pendingUrlRef.current = null;
+      if (currentUrlRef.current) {
+        setAvatarUrl(currentUrlRef.current);
+        setLoaded(true);
       }
-    };
+    }
+  }, [loaded]);
 
-    const unsubscribe = cache.subscribe(userId, handleAvatarUpdate);
-    return unsubscribe;
-  }, [userId, cache.subscribe, loadAvatar]);
-
-  // Основная загрузка при изменении userId
   useEffect(() => {
     if (!userId) return;
     loadAvatar(userId);
     return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      if (urlRef.current) {
-        URL.revokeObjectURL(urlRef.current);
-        urlRef.current = null;
-      }
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+      if (currentUrlRef.current) URL.revokeObjectURL(currentUrlRef.current);
+      if (pendingUrlRef.current) URL.revokeObjectURL(pendingUrlRef.current);
     };
   }, [userId, loadAvatar]);
+
+  // Подписка на обновления аватарки
+  useEffect(() => {
+    if (!userId || !cache.subscribe) return;
+    const unsubscribe = cache.subscribe(userId, (updatedUserId) => {
+      if (updatedUserId === userId) loadAvatar(userId, true);
+    });
+    return unsubscribe;
+  }, [userId, cache.subscribe, loadAvatar]);
 
   const initials = username ? username.charAt(0).toUpperCase() : '?';
 
