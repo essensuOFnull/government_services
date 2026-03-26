@@ -28,7 +28,7 @@ export function MessageList({
     <div className="messages-list" ref={messageListRef}>
       {allMessages.map(msg => (
         <Message
-          key={msg.id}
+          key={msg._key}
           msg={msg}
           fileMeta={fileMeta}
           users={users}

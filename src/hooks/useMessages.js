@@ -254,14 +254,15 @@ export function useMessages({
 
   // Объединённый список сообщений (реальные + pending)
   const allMessages = useMemo(() => {
-    const real = messages.map(m => ({ ...m, isPending: false }));
-    const pending = pendingMessages.map(p => ({
-      ...p,
-      id: p.localId,
-      isPending: true,
-      created_at: p.created_at,
-    }));
-    return [...real, ...pending].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+	const real = messages.map(m => ({ ...m, isPending: false, _key: `real-${m.id}` }));
+	const pending = pendingMessages.map(p => ({
+		...p,
+		id: p.localId,
+		isPending: true,
+		created_at: p.created_at,
+		_key: `pending-${p.localId}`,
+	}));
+	return [...real, ...pending].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   }, [messages, pendingMessages]);
 
   // Обработка входящих сообщений от WebSocket
