@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuthContext } from './AuthContext';
 
-export default function AuthorizationWindow({ onClose,onGlobalPasswordInvalid }) {
+export default function AuthorizationWindow({ onClose,onGlobalPasswordInvalid, globalPassword }) {
 	const [activeTab, setActiveTab] = useState(0);
 	/*общее*/
 	const { login,register, error, loading } = useAuthContext();
@@ -19,7 +19,7 @@ export default function AuthorizationWindow({ onClose,onGlobalPasswordInvalid })
 			return;
 		}
 
-		const result = await login(username, password);
+		const result = await login(username, password, globalPassword);
 		if (!result.success) {
 			// Если ошибка связана с глобальным паролем (проверяем по коду или тексту)
 			if (result.message && (result.message.includes('глобальный пароль') || result.message.toLowerCase().includes('global password'))) {
@@ -71,9 +71,9 @@ export default function AuthorizationWindow({ onClose,onGlobalPasswordInvalid })
 			return;
 		}
 
-		const result = await register(username, password);
+		const result = await register(username, password, globalPassword);
 		if (!result.success) {
-			if (result.message && (result.message.includes('глобальный пароль') || result.message.includes('global password'))) {
+			if (result.message && (result.message.includes('глобальный пароль') || result.message.includes('global password'))){
 				onGlobalPasswordInvalid?.();
 			} else {
 				setRegisterError(result.message);

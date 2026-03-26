@@ -26,10 +26,7 @@ export const useAuth = () => {
     }
   };
 
-  const getGlobalPassword = () => localStorage.getItem('global_password');
-
-  const login = useCallback(async (username, password) => {
-    const globalPassword = getGlobalPassword();
+  const login = useCallback(async (username, password, globalPassword) => {
     if (!globalPassword) {
       return { success: false, message: 'Необходим глобальный пароль' };
     }
@@ -49,15 +46,13 @@ export const useAuth = () => {
     }
   }, []);
 
-  const register = useCallback(async (username, password) => {
-    const globalPassword = getGlobalPassword();
+  const register = useCallback(async (username, password, globalPassword) => {
     if (!globalPassword) {
       return { success: false, message: 'Необходим глобальный пароль' };
     }
     try {
       setError(null);
-      const response = await api.register(username, password);
-      
+      const response = await api.register(username, password, globalPassword);
       if (response.success) {
         setUser(response.user);
         saveAuthData(username, response.user.id);
