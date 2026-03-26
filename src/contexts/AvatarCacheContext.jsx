@@ -1,5 +1,5 @@
 // AvatarCacheContext.js
-import React, { createContext, useContext, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useRef, useCallback, useMemo } from 'react';
 
 const AvatarCacheContext = createContext();
 
@@ -37,13 +37,13 @@ export const AvatarCacheProvider = ({ children }) => {
     }
   }, []);
 
-  const value = {
+  const value = useMemo(() => ({
     getCachedBlob,
     setCachedBlob,
     invalidateCache,
     subscribe,
     notifyUpdate,
-  };
+  }), [getCachedBlob, setCachedBlob, invalidateCache, subscribe, notifyUpdate]);
 
   return (
     <AvatarCacheContext.Provider value={value}>
