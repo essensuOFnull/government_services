@@ -17,6 +17,18 @@ function MainApp() {
       applyWallpaper(wallpaper.type, wallpaper.url, mode);
     }
   }, []);
+  /*спрашиваем точно ли пользователь хочет случайно обновить страницу на телефоне)*/
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      // Можно показывать предупреждение, если есть какие-то несохранённые данные
+      // Или всегда показывать, чтобы защитить от случайного обновления.
+      e.preventDefault();
+      e.returnValue = 'Вы действительно хотите покинуть страницу? Несохранённые данные могут быть потеряны.';
+      return e.returnValue;
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
   /**/
   const { user, loading, isAuthenticated } = useAuthContext();
   const { windows, openWindow, closeWindow, updateWindow, bringToFront, minimizeWindow } = useWindowsManager();
