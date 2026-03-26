@@ -89,7 +89,9 @@ function MainApp() {
           {windowData.children}
         </Window>
       ))}
-      <Taskbar/>
+      <Taskbar
+        windows={windows}
+        onWindowClick={bringToFront}/>
     </AvatarCacheProvider>
   );
 }
