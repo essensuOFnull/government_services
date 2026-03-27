@@ -1,6 +1,8 @@
-import React, { useRef } from 'react';
+import React, { useRef,useCallback } from 'react';
 import Message from './Message';
 import { useScrollPagination } from '../hooks/useScrollPagination';
+import { useMessengerWebSocket } from '../hooks/useMessengerWebSocket';
+import { useAuthContext } from '../contexts/AuthContext';
 
 export function MessageList({
   allMessages,
@@ -15,8 +17,13 @@ export function MessageList({
   hasMore,
   loadMoreMessages,
 }) {
-  const messageListRef = useRef(null);
+  const { user} = useAuthContext();
+  const handleWebSocketMessage = useCallback((data) => {
+    // Здесь можно обрабатывать другие типы сообщений
+  }, []);
+  const {wsRef } = useMessengerWebSocket(user?.id, handleWebSocketMessage);
 
+  const messageListRef = useRef(null);
   useScrollPagination({
     messageListRef,
     hasMore,
@@ -33,7 +40,7 @@ export function MessageList({
           fileMeta={fileMeta}
           users={users}
           onDelete={onDeleteMessage}
-          wsRef={null} // TODO: передать wsRef? Нужен ли он в Message?
+          wsRef={wsRef}
           userId={userId}
           cacheEnabled={cacheEnabled}
           getCachedFile={getCachedFile}
