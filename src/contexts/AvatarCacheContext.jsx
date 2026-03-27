@@ -23,7 +23,6 @@ export const AvatarCacheProvider = ({ children }) => {
   }, []);
 
   const notifyUpdate = useCallback((userId) => {
-    console.log('AvatarCache: notifyUpdate called for', userId);
     const callbacks = subscribersRef.current.get(userId);
     if (callbacks) {
       callbacks.forEach(cb => cb(userId));

@@ -15,7 +15,6 @@ export default function Taskbar(props) {
     // Заглушка для входящих сообщений WebSocket (можно расширить позже)
     const handleIncomingMessage = useCallback((message) => {
         // Обработка других типов сообщений, если понадобится
-        console.log('Получено сообщение WebSocket:', message);
     }, []);
 
     const { wsRef } = useMessengerWebSocket(user?.id, handleIncomingMessage);

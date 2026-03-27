@@ -113,7 +113,6 @@ export default function Avatar({ userId, username, size = 40, style = {}, cacheE
     if (!userId || !cache.subscribe) return;
 
     const handleUpdate = (updatedUserId) => {
-      console.log('Avatar cache update received for', updatedUserId, 'current userId', userId);
       if (updatedUserId === userId) {
         loadAvatarRef.current(userId, true);
       }
