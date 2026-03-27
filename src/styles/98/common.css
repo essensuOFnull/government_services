@@ -1102,3 +1102,11 @@ select,
 [contenteditable="true"] {
   cursor: text;
 }
+
+.window.maximized{
+    border:none;
+    box-shadow:none;
+    margin:0;
+    padding:0;
+    border-radius:0;
+}

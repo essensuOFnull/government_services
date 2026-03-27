@@ -421,7 +421,7 @@ export default function Window(props) {
   return (
     <div
       ref={windowRef}
-      className={`window ${isDragging ? 'dragging' : ''} ${isResizing ? 'resizing' : ''}`}
+      className={`window${isDragging?' dragging':''}${isResizing?' resizing':''}${isMaximized?' maximized':''}`}
       style={{
         position: 'fixed',
         left: `${position.x}px`,
