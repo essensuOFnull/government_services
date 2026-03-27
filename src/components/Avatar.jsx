@@ -1,7 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAvatarCache } from '../contexts/AvatarCacheContext';
 
-export default function Avatar({ userId, username, size = 40, style = {}, cacheEnabled = true }) {
+export default function Avatar({ 
+  userId, 
+  username, 
+  size = 40, 
+  style = {}, 
+  cacheEnabled = true,
+  onClick = null  // новый пропс – функция, вызываемая при клике на реальный аватар
+}) {
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const currentUrlRef = useRef(null);
@@ -35,12 +42,10 @@ export default function Avatar({ userId, username, size = 40, style = {}, cacheE
     abortControllerRef.current = controller;
 
     try {
-      // Принудительное обновление: инвалидируем кэш
       if (forceRefresh && cacheEnabled && cache.invalidateCache) {
         cache.invalidateCache(userId);
       }
 
-      // Если forceRefresh, не используем кэш
       let blob = null;
       if (!forceRefresh && cacheEnabled && cache.getCachedBlob) {
         blob = cache.getCachedBlob(userId);
@@ -154,8 +159,9 @@ export default function Avatar({ userId, username, size = 40, style = {}, cacheE
     ...style
   };
 
+  // Если аватар загружен и есть URL, рендерим кликабельное изображение (при наличии onClick)
   if (loaded && avatarUrl) {
-    return (
+    const imgElement = (
       <img
         src={avatarUrl}
         alt={username}
@@ -165,12 +171,21 @@ export default function Avatar({ userId, username, size = 40, style = {}, cacheE
           ...containerStyle,
           width: size,
           height: size,
-          objectFit: 'cover'
+          objectFit: 'cover',
+          cursor: onClick ? 'pointer' : 'default'
         }}
       />
     );
+
+    // Если передан onClick, оборачиваем изображение в элемент с обработчиком
+    return onClick ? (
+      <div onClick={() => onClick(userId, avatarUrl)} style={{ display: 'contents' }}>
+        {imgElement}
+      </div>
+    ) : imgElement;
   }
 
+  // Заглушка с инициалами
   return (
     <div style={containerStyle}>
       <span style={{

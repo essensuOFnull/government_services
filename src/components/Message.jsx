@@ -3,6 +3,8 @@ import FileItem from './FileItem';
 import Avatar from './Avatar';
 import { useAuthContext } from '../contexts/AuthContext';
 import ForwardButton from './ForwardButton';
+import FileViewer from './FileViewer';
+import { useWindowsManager } from '../hooks/useWindowsManager';
 
 export default function Message({
   msg,
@@ -76,6 +78,25 @@ export default function Message({
     (user.id === senderId ||
       user.username === msg.sender_username);
 
+  const { openWindow} = useWindowsManager();
+  const handleAvatarClick = (userId, avatarUrl) => {
+    openWindow({
+      title: `Аватар пользователя ${senderName}`,
+      children: (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '16px' }}>
+          <img
+            src={avatarUrl}
+            alt={senderName}
+            style={{
+              maxWidth: '100%',
+              maxHeight: '100%',
+              objectFit: 'contain',
+            }}
+          />
+        </div>
+      ),
+    });
+  };
   return (
     <>
       <hr style={{ width: '100%' }} />
@@ -88,6 +109,7 @@ export default function Message({
             cacheEnabled={cacheEnabled}
             getCachedFile={getCachedFile}
             saveToCache={saveToCache}
+            onClick={handleAvatarClick}
           />
           <div style={{ flex: 1 }}>
             <strong>{senderName}</strong>
