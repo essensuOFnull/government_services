@@ -22,13 +22,18 @@ export function useMessengerWebSocket(userId, onMessage) {
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
+    ws.addEventListener('open', () => console.log('WebSocket connected for user', userId));
+    ws.addEventListener('close', () => console.log('WebSocket closed for user', userId));
+
     const handleMessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'avatar_updated') {
-          cacheRef.current?.notifyUpdate(data.userId);
+        const parsedData = JSON.parse(event.data);
+        console.log('WS received:', parsedData);
+        if (parsedData.type === 'avatar_updated') {
+          console.log('Avatar update received for user', parsedData.userId);
+          cacheRef.current?.notifyUpdate(parsedData.userId);
         }
-        onMessageRef.current(data);
+        onMessageRef.current(parsedData);
       } catch (err) {
         console.error('Ошибка парсинга сообщения:', err);
       }

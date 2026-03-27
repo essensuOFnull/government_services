@@ -3,7 +3,7 @@ import { useAuthContext } from './AuthContext';
 import { useWindowsManager } from '../../hooks/useWindowsManager';
 import Avatar from '../Avatar';
 
-const ProfileWindow = ({ onClose, wsRef, cache }) => {
+const ProfileWindow = ({}) => {
   const { 
     user, 
     logout, 
@@ -105,13 +105,7 @@ const ProfileWindow = ({ onClose, wsRef, cache }) => {
       const json = await response.json();
       if (response.ok && json.success) {
         setMessage('Аватарка загружена успешно');
-        // setAvatarRefresh(prev => prev + 1); // Удаляем
         if (updateUser) updateUser({ ...user, avatar_file_id: json.file.id });
-        if (wsRef?.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: 'avatar_updated', userId: user.id }));
-        }
-        cache?.invalidateCache(user.id);
-        cache?.notifyUpdate(user.id);
       } else {
         setError(json.message || 'Ошибка загрузки аватарки');
       }
@@ -140,13 +134,7 @@ const ProfileWindow = ({ onClose, wsRef, cache }) => {
       const json = await response.json();
       if (response.ok && json.success) {
         setMessage('Аватарка удалена');
-        // setAvatarRefresh(prev => prev + 1); // Удаляем
         if (updateUser) updateUser({ ...user, avatar_file_id: null });
-        if (wsRef?.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: 'avatar_updated', userId: user.id }));
-        }
-        cache?.invalidateCache(user.id);
-        cache?.notifyUpdate(user.id);
       } else {
         setError(json.message || 'Ошибка удаления аватарки');
       }

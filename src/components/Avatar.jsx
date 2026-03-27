@@ -10,7 +10,8 @@ export default function Avatar({ userId, username, size = 40, style = {}, cacheE
   const cache = useAvatarCache();
 
   const loadFromServer = useCallback(async (userId, signal) => {
-    const response = await fetch(`/api/messenger/avatar/${encodeURIComponent(userId)}`, { signal });
+    const url = `/api/messenger/avatar/${encodeURIComponent(userId)}?t=${Date.now()}`;
+    const response = await fetch(url, { signal });
     if (!response.ok) {
       if (response.status === 404) return null;
       throw new Error(`HTTP ${response.status}`);
@@ -34,6 +35,12 @@ export default function Avatar({ userId, username, size = 40, style = {}, cacheE
     abortControllerRef.current = controller;
 
     try {
+      // Принудительное обновление: инвалидируем кэш
+      if (forceRefresh && cacheEnabled && cache.invalidateCache) {
+        cache.invalidateCache(userId);
+      }
+
+      // Если forceRefresh, не используем кэш
       let blob = null;
       if (!forceRefresh && cacheEnabled && cache.getCachedBlob) {
         blob = cache.getCachedBlob(userId);
@@ -44,17 +51,6 @@ export default function Avatar({ userId, username, size = 40, style = {}, cacheE
         currentUrlRef.current = url;
         setAvatarUrl(url);
         setLoaded(true);
-        loadFromServer(userId, controller.signal)
-          .then(result => {
-            if (result?.blob && blob.size !== result.blob.size) {
-              const newUrl = URL.createObjectURL(result.blob);
-              pendingUrlRef.current = currentUrlRef.current;
-              currentUrlRef.current = newUrl;
-              setAvatarUrl(newUrl);
-              cache.setCachedBlob(userId, result.blob, result.timestamp);
-            }
-          })
-          .catch(err => { if (err.name !== 'AbortError') console.error(err); });
         return;
       }
 
@@ -117,6 +113,7 @@ export default function Avatar({ userId, username, size = 40, style = {}, cacheE
     if (!userId || !cache.subscribe) return;
 
     const handleUpdate = (updatedUserId) => {
+      console.log('Avatar cache update received for', updatedUserId, 'current userId', userId);
       if (updatedUserId === userId) {
         loadAvatarRef.current(userId, true);
       }

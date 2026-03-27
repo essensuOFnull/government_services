@@ -1,17 +1,27 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect,useCallback } from 'react';
 import Taskbar from './Taskbar';
 import Window from './Window';
 import { AuthProvider, useAuthContext } from './auth/AuthContext';
 import { WindowsProvider, useWindowsManager } from '../hooks/useWindowsManager';
 import AuthWrapper from './auth/AuthWrapper';
-import ProfileWindow from './auth/ProfileWindow';
-import MenuWindow from './MenuWindow';
 import { loadWallpaper, applyWallpaper, loadWallpaperMode } from '../utils/wallpaperUtils';
 
 import { AvatarCacheProvider } from '../contexts/AvatarCacheContext';
+import { useMessengerWebSocket } from '../hooks/useMessengerWebSocket';
 
 function MainApp() {
-  /*применяем фон рабочего стола*/
+  const { user, loading, isAuthenticated } = useAuthContext();
+  const { windows, openWindow, closeWindow, updateWindow, bringToFront, minimizeWindow } = useWindowsManager();
+
+  // Обработчик сообщений WebSocket (можно добавить логику для чата)
+  const handleWebSocketMessage = useCallback((data) => {
+    // Здесь можно обрабатывать другие типы сообщений
+  }, []);
+
+  // Подключаем WebSocket для получения уведомлений об аватарках
+  const { send, wsRef } = useMessengerWebSocket(user?.id, handleWebSocketMessage);
+
+  // Применяем фон рабочего стола
   useEffect(() => {
     const wallpaper = loadWallpaper();
     const mode = loadWallpaperMode();
@@ -19,11 +29,10 @@ function MainApp() {
       applyWallpaper(wallpaper.type, wallpaper.url, mode);
     }
   }, []);
-  /*спрашиваем точно ли пользователь хочет случайно обновить страницу на телефоне)*/
+
+  // Предупреждение при обновлении страницы
   useEffect(() => {
     const handleBeforeUnload = (e) => {
-      // Можно показывать предупреждение, если есть какие-то несохранённые данные
-      // Или всегда показывать, чтобы защитить от случайного обновления.
       e.preventDefault();
       e.returnValue = 'Вы действительно хотите покинуть страницу? Несохранённые данные могут быть потеряны.';
       return e.returnValue;
@@ -31,13 +40,10 @@ function MainApp() {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
-  /**/
-  const { user, loading, isAuthenticated } = useAuthContext();
-  const { windows, openWindow, closeWindow, updateWindow, bringToFront, minimizeWindow } = useWindowsManager();
+
   // Автоматическое открытие окна входа при загрузке
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      // Если нет окна входа, открываем его
       if (!windows.some(w => w.type === 'authorization')) {
         openWindow({
           type: 'authorization',
@@ -46,7 +52,6 @@ function MainApp() {
         });
       }
     } else if (!loading && isAuthenticated) {
-      // Закрываем окна авторизации при входе
       windows.forEach(w => {
         if (w.type === 'authorization') {
           closeWindow(w.id);
@@ -76,7 +81,7 @@ function MainApp() {
   }
 
   return (
-    <AvatarCacheProvider>
+    <>
       {windows.map(windowData => (
         <Window
           key={windowData.id}
@@ -91,8 +96,8 @@ function MainApp() {
       ))}
       <Taskbar
         windows={windows}
-        onWindowClick={bringToFront}/>
-    </AvatarCacheProvider>
+        onWindowClick={bringToFront} />
+    </>
   );
 }
 
@@ -100,7 +105,9 @@ export default function App() {
   return (
     <AuthProvider>
       <WindowsProvider>
-        <MainApp />
+        <AvatarCacheProvider>
+          <MainApp />
+        </AvatarCacheProvider>
       </WindowsProvider>
     </AuthProvider>
   );

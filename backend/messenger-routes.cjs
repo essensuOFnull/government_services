@@ -96,6 +96,39 @@ const authenticateUser = async (req, res, next) => {
   }
 };
 
+// Вспомогательная функция: получить всех участников общих чатов с указанным пользователем
+async function getConversationParticipants(userId) {
+  const participants = await sequelize.query(
+    `SELECT DISTINCT cp2.participant_id
+     FROM conversations_participants cp1
+     JOIN conversations_participants cp2 ON cp1.conversation_id = cp2.conversation_id
+     WHERE cp1.participant_id = :userId`,
+    { replacements: { userId }, type: sequelize.QueryTypes.SELECT }
+  );
+  return participants.map(p => p.participant_id);
+}
+
+// Вспомогательная функция: уведомить всех участников чатов об обновлении аватарки
+async function notifyAvatarUpdate(userId, wsServer) {
+  if (!wsServer) {
+    console.log('notifyAvatarUpdate: wsServer not available');
+    return;
+  }
+  try {
+    const participantIds = await getConversationParticipants(userId);
+    const uniqueIds = [...new Set([userId, ...participantIds])];
+    console.log(`notifyAvatarUpdate: sending to ${uniqueIds.length} users:`, uniqueIds);
+    for (const id of uniqueIds) {
+      wsServer.broadcastToUser(id, {
+        type: 'avatar_updated',
+        userId: userId
+      });
+    }
+  } catch (err) {
+    console.error('Failed to notify avatar update:', err);
+  }
+}
+
 // Поиск пользователя по username
 router.get('/find-user', authenticateUser, async (req, res) => {
   try {
@@ -598,6 +631,7 @@ router.delete('/delete-message/:messageId', authenticateUser, async (req, res) =
           await file.destroy();
           try {
             await storageManager.removeFileFromQuota(file.owner_id, file.size || 0);
+            const wsServer = req.app.get('wsServer');
             if (wsServer) {
               const newStorageInfo = await storageManager.getStorageInfo(file.owner_id);
               wsServer.broadcastToUser(file.owner_id, {
@@ -621,6 +655,7 @@ router.delete('/delete-message/:messageId', authenticateUser, async (req, res) =
             try {
               if (oldOwner) await storageManager.removeFileFromQuota(oldOwner, file.size || 0);
               await storageManager.addFileToQuota(newOwner, file.size || 0);
+              const wsServer = req.app.get('wsServer');
               if (wsServer) {
                 if (oldOwner) {
                   const oldInfo = await storageManager.getStorageInfo(oldOwner);
@@ -1089,6 +1124,13 @@ router.post('/avatar/upload',
         console.error('Error deleting temp file:', e);
       }
 
+      // Уведомляем участников чатов
+      console.log('Avatar upload/delete for user', userId);
+      const wsServer = req.app.get('wsServer');
+      console.log('wsServer exists?', !!wsServer);
+      await notifyAvatarUpdate(userId, wsServer);
+      console.log('notifyAvatarUpdate called');
+
       res.json({ 
         success: true, 
         message: 'Аватарка загружена успешно',
@@ -1135,6 +1177,10 @@ router.delete('/avatar', authenticateUser, async (req, res) => {
     }
 
     await User.update({ avatar_file_id: null }, { where: { id: userId } });
+
+    // Уведомляем участников чатов
+    const wsServer = req.app.get('wsServer');
+    await notifyAvatarUpdate(userId, wsServer);
 
     res.json({ 
       success: true, 
