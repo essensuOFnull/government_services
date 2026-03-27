@@ -76,11 +76,6 @@ body {
     flex-wrap:wrap;
 }
 
-.taskbar-windows {
-    box-shadow: var(--border-status-field);
-    padding: 8px;
-}
-
 .window-body [role=tablist] {
     margin-top: 3px;
 }

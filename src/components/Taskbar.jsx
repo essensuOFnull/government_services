@@ -21,7 +21,7 @@ export default function Taskbar(props) {
     const cache = useAvatarCache();
     
     return (
-        <footer className='taskbar'>
+        <footer className='window taskbar'>
             {isAuthenticated && (
                 <button onClick={() => {
                     openWindow({
@@ -34,7 +34,7 @@ export default function Taskbar(props) {
             <img src="icon.svg" style={{ width: "32px", height: "32px" }} alt="icon" />
             <p>Госуслуги Подбредья</p>
             
-            <div className="taskbar-windows status-field-border">
+            <fieldset className="taskbar-windows">
                 {props.windows && props.windows.map(window => (
                     <button
                         key={window.id}
@@ -44,7 +44,7 @@ export default function Taskbar(props) {
                         {window.title}
                     </button>
                 ))}
-            </div>
+            </fieldset>
 
             <button
                 onClick={toggleTheme}
