@@ -1,7 +1,7 @@
 // AuthWrapper.jsx
 import { useState } from 'react';
-import { useGlobalAuth } from '../../hooks/useGlobalAuth';
-import GlobalPasswordPrompt from '../GlobalPasswordPrompt';
+import { useGlobalAuth } from '../hooks/useGlobalAuth';
+import GlobalPasswordPrompt from './GlobalPasswordPrompt';
 import AuthorizationWindow from './AuthorizationWindow';
 
 export default function AuthWrapper({ onClose }) {

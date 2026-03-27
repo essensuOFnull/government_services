@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useWindowsManager } from '../hooks/useWindowsManager';
-import { useAuthContext } from './auth/AuthContext';
+import { useAuthContext } from '../contexts/AuthContext';
 import FileViewer from './FileViewer';
 import { saveWallpaper, applyWallpaper } from '../utils/wallpaperUtils';
 

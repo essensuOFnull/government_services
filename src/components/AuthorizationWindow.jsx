@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAuthContext } from './AuthContext';
+import { useAuthContext } from '../contexts/AuthContext';
 
 export default function AuthorizationWindow({ onClose,onGlobalPasswordInvalid, globalPassword }) {
 	const [activeTab, setActiveTab] = useState(0);

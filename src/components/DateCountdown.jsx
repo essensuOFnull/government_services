@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useTheme } from '../../contexts/ThemeContext';
-import './DateCountdown.css';
+import { useTheme } from '../contexts/ThemeContext';
+import '../styles/DateCountdown.css';
 
 const DateCountdown = () => {
   const canvasRef = useRef(null);

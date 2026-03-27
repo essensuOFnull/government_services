@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { useAuthContext } from './auth/AuthContext';
+import { useAuthContext } from '../contexts/AuthContext';
 import { useFileCache } from '../hooks/useFileCache';
 import { useMessengerWebSocket } from '../hooks/useMessengerWebSocket';
 import { useStorageInfo } from '../hooks/useStorageInfo';
@@ -11,7 +11,7 @@ import { useMessages } from '../hooks/useMessages';
 import { useConversations } from '../hooks/useConversations';
 import MessengerSidebar from './MessengerSidebar';
 import MessengerMain from './MessengerMain';
-import './Messenger.css';
+import '../styles/Messenger.css';
 
 export function Messenger({ userId }) {
   const { user } = useAuthContext();

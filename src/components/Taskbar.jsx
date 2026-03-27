@@ -1,8 +1,8 @@
 import { useWindowsManager } from '../hooks/useWindowsManager';
 import { useTheme } from '../contexts/ThemeContext';
-import ProfileWindow from './auth/ProfileWindow';
+import ProfileWindow from './ProfileWindow';
 import MenuWindow from './MenuWindow';
-import { AuthProvider, useAuthContext } from './auth/AuthContext';
+import { AuthProvider, useAuthContext } from '../contexts/AuthContext';
 import { useAvatarCache } from '../contexts/AvatarCacheContext';
 import { useMessengerWebSocket } from '../hooks/useMessengerWebSocket';
 import { useCallback } from 'react';

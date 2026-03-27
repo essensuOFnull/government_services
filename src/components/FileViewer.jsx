@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useAuthContext } from './auth/AuthContext';
+import { useAuthContext } from '../contexts/AuthContext';
 
 export default function FileViewer({ fileId, fileMeta = {} }) {
   const { user } = useAuthContext();

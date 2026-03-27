@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import Messenger from './Messenger';
 import { useWindowsManager } from '../hooks/useWindowsManager';
 import { useAuth } from '../hooks/useAuth';
-import DecorDisassembling from './calculators/crossout/DecorDisassembling';
-import DateCountdown from './calculators/DateCountdown.jsx';
+import DecorDisassembling from './DecorDisassembling';
+import DateCountdown from './DateCountdown.jsx';
 import {
   loadWallpaperMode,
   saveWallpaperMode,

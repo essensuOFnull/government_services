@@ -1,8 +1,8 @@
 import React from 'react';
 import FileItem from './FileItem';
 import Avatar from './Avatar';
-import { useAuthContext } from './auth/AuthContext';
-import ForwardButton from './forward/ForwardButton';
+import { useAuthContext } from '../contexts/AuthContext';
+import ForwardButton from './ForwardButton';
 
 export default function Message({
   msg,

@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { useAuthContext } from './AuthContext';
-import { useWindowsManager } from '../../hooks/useWindowsManager';
-import Avatar from '../Avatar';
+import { useAuthContext } from '../contexts/AuthContext';
+import { useWindowsManager } from '../hooks/useWindowsManager';
+import Avatar from './Avatar';
 
 const ProfileWindow = ({}) => {
   const { 

@@ -1,9 +1,9 @@
 import { useState, useEffect,useCallback } from 'react';
 import Taskbar from './Taskbar';
 import Window from './Window';
-import { AuthProvider, useAuthContext } from './auth/AuthContext';
+import { AuthProvider, useAuthContext } from '../contexts/AuthContext';
 import { WindowsProvider, useWindowsManager } from '../hooks/useWindowsManager';
-import AuthWrapper from './auth/AuthWrapper';
+import AuthWrapper from './AuthWrapper';
 import { loadWallpaper, applyWallpaper, loadWallpaperMode } from '../utils/wallpaperUtils';
 
 import { AvatarCacheProvider } from '../contexts/AvatarCacheContext';

@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAuthContext } from '../auth/AuthContext';
+import { useAuthContext } from '../contexts/AuthContext';
 
 export default function ForwardButton({ msg, wsRef }) {
   const { user } = useAuthContext();

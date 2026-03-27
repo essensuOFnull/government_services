@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { useAuth } from '../../../hooks/useAuth';
+import { useAuth } from '../hooks/useAuth';
 
 export default function DecorDisassembling() {
 	const { user } = useAuth();
