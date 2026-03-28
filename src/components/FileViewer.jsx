@@ -18,6 +18,8 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
 
   // Флаг, разрешающий синхронизацию
   const syncEnabled = useRef(true);
+  // Для предотвращения повторных обновлений
+  const isRefreshing = useRef(false);
 
   const getFileType = () => {
     if (isStorageFile) {
@@ -39,7 +41,59 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
 
   const fileType = getFileType();
 
-  // Получение URL
+  // Получение URL (вынесем в отдельную функцию для возможности переиспользования)
+  const fetchVideoUrl = async () => {
+    let token = null;
+    try {
+      if (isStorageFile) {
+        const tokenResp = await fetch('/api/storage/preview-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+          body: JSON.stringify({ path: file.path }),
+        });
+        const data = await tokenResp.json();
+        if (!tokenResp.ok || !data.success) throw new Error(data.message || 'Не удалось получить токен');
+        token = data.token;
+        const previewUrl = `/api/storage/preview?token=${encodeURIComponent(token)}`;
+        return { url: previewUrl, token };
+      } else {
+        const tokenResp = await fetch(`/api/messenger/preview-token/${fileId}`, {
+          method: 'POST',
+          headers: { 'x-user-id': userId },
+        });
+        const tj = await tokenResp.json();
+        if (!tokenResp.ok || !tj.success || !tj.token) throw new Error(tj.message || 'Не удалось получить токен');
+        token = tj.token;
+        const previewUrl = `/api/messenger/preview/${fileId}?token=${encodeURIComponent(token)}`;
+        return { url: previewUrl, token };
+      }
+    } catch (err) {
+      console.error('Token fetch error', err);
+      throw err;
+    }
+  };
+
+  // Загрузка аудиодорожек
+  const fetchAudioTracks = async () => {
+    if (fileType !== 'video' || !isStorageFile) return [];
+    try {
+      const resp = await fetch(`/api/storage/audio-tracks?path=${encodeURIComponent(file.path)}`, {
+        headers: { 'x-user-id': userId },
+      });
+      if (!resp.ok) throw new Error('Ошибка загрузки списка дорожек');
+      const data = await resp.json();
+      if (data.success && data.tracks) {
+        return data.tracks;
+      } else {
+        return [];
+      }
+    } catch (err) {
+      console.error('Audio tracks error', err);
+      return [];
+    }
+  };
+
+  // Первоначальная загрузка
   useEffect(() => {
     let mounted = true;
     let token = null;
@@ -48,18 +102,8 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
       setLoading(true);
       setError(null);
       try {
-        if (isStorageFile) {
-          const tokenResp = await fetch('/api/storage/preview-token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
-            body: JSON.stringify({ path: file.path }),
-          });
-          const data = await tokenResp.json();
-          if (!tokenResp.ok || !data.success) throw new Error(data.message || 'Не удалось получить токен');
-          token = data.token;
-          const previewUrl = `/api/storage/preview?token=${encodeURIComponent(token)}`;
-
-          if (fileType === 'text') {
+        if (fileType === 'text') {
+          if (isStorageFile) {
             const resp = await fetch(`/api/storage/download?path=${encodeURIComponent(file.path)}`, {
               headers: { 'x-user-id': userId },
             });
@@ -67,25 +111,23 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
             const txt = await resp.text();
             if (mounted) setTextContent(txt);
           } else {
-            if (mounted) setSrcUrl(previewUrl);
+            const resp = await fetch(`/api/messenger/preview/${fileId}?token=${encodeURIComponent(token)}`); // token еще не получен, но для текста используется другой подход
+            // На самом деле для текста нужен токен, упростим: используем ту же логику что и для видео
+            const { url, token: newToken } = await fetchVideoUrl();
+            token = newToken;
+            const respText = await fetch(url);
+            if (!respText.ok) throw new Error('Не удалось получить текст');
+            const txt = await respText.text();
+            if (mounted) setTextContent(txt);
           }
         } else {
-          const tokenResp = await fetch(`/api/messenger/preview-token/${fileId}`, {
-            method: 'POST',
-            headers: { 'x-user-id': userId },
-          });
-          const tj = await tokenResp.json();
-          if (!tokenResp.ok || !tj.success || !tj.token) throw new Error(tj.message || 'Не удалось получить токен');
-          token = tj.token;
-          const previewUrl = `/api/messenger/preview/${fileId}?token=${encodeURIComponent(token)}`;
+          const { url, token: newToken } = await fetchVideoUrl();
+          token = newToken;
+          if (mounted) setSrcUrl(url);
 
-          if (fileType === 'text') {
-            const resp = await fetch(previewUrl);
-            if (!resp.ok) throw new Error('Не удалось получить текст');
-            const txt = await resp.text();
-            if (mounted) setTextContent(txt);
-          } else {
-            if (mounted) setSrcUrl(previewUrl);
+          if (fileType === 'video' && isStorageFile) {
+            const tracks = await fetchAudioTracks();
+            if (mounted) setAudioTracks(tracks);
           }
         }
       } catch (err) {
@@ -103,32 +145,9 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
         fetch(`${endpoint}/${encodeURIComponent(token)}`, { method: 'POST', headers: { 'x-user-id': userId } }).catch(() => {});
       }
     };
-  }, [isStorageFile, fileId, file?.path, userId, fileType]);
+  }, [isStorageFile, fileId, file?.path, userId, fileType]); // зависимости оставляем как есть, но при рефреше вызовется отдельно
 
-  // Загрузка аудиодорожек
-  useEffect(() => {
-    if (fileType !== 'video' || !isStorageFile || !srcUrl) return;
-
-    (async () => {
-      try {
-        const resp = await fetch(`/api/storage/audio-tracks?path=${encodeURIComponent(file.path)}`, {
-          headers: { 'x-user-id': userId },
-        });
-        if (!resp.ok) throw new Error('Ошибка загрузки списка дорожек');
-        const data = await resp.json();
-        if (data.success && data.tracks) {
-          setAudioTracks(data.tracks);
-        } else {
-          setAudioTracks([]);
-        }
-      } catch (err) {
-        console.error('Audio tracks error', err);
-        setAudioTracks([]);
-      }
-    })();
-  }, [fileType, isStorageFile, file?.path, srcUrl, userId]);
-
-  // Синхронизация видео и аудио (с учётом видимости)
+  // Синхронизация видео и аудио (без изменений, только добавим проверку syncEnabled)
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -217,19 +236,16 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
       video.removeEventListener('seeked', handleSeeked);
       video.removeEventListener('timeupdate', handleTimeUpdate);
     };
-  }, [audioTracks]); // пересоздаём при изменении списка дорожек
+  }, [audioTracks]);
 
   // Отслеживаем видимость страницы
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        // Вкладка неактивна — отключаем синхронизацию
         syncEnabled.current = false;
       } else {
-        // Вкладка активна — включаем синхронизацию и принудительно синхронизируем видео по аудио
         syncEnabled.current = true;
-
-        // Находим активную аудиодорожку (не muted и не paused)
+        // Находим активную аудиодорожку
         let activeAudio = null;
         for (const audio of Object.values(audioRefs.current)) {
           if (!audio.muted && !audio.paused) {
@@ -237,25 +253,85 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
             break;
           }
         }
-
         if (activeAudio && videoRef.current) {
           const video = videoRef.current;
           const targetTime = activeAudio.currentTime;
-          // Если разница больше 0.2 секунды, синхронизируем
           if (Math.abs(video.currentTime - targetTime) > 0.2) {
             video.currentTime = targetTime;
           }
-          // Если видео на паузе, а активное аудио играет, возможно, стоит запустить видео?
-          // По умолчанию не трогаем, чтобы не нарушать состояние пользователя.
         }
       }
     };
-
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
+
+  // Обработчик ошибок видео
+  const handleVideoError = async () => {
+    if (isRefreshing.current) return;
+    isRefreshing.current = true;
+    try {
+      console.log('Video error, refreshing token...');
+      const video = videoRef.current;
+      if (!video) return;
+
+      // Сохраняем состояние
+      const savedTime = video.currentTime;
+      const wasPlaying = !video.paused;
+      let savedActiveTrack = null;
+      if (audioTracks.length > 0) {
+        for (let i = 0; i < audioTracks.length; i++) {
+          const audio = audioRefs.current[audioTracks[i].index];
+          if (audio && !audio.muted) {
+            savedActiveTrack = { index: i, track: audioTracks[i] };
+            break;
+          }
+        }
+      }
+
+      // Запрашиваем новый URL
+      const { url: newUrl, token: newToken } = await fetchVideoUrl();
+      setSrcUrl(newUrl);
+
+      // Для видео с треками перезагружаем аудиодорожки
+      if (fileType === 'video' && isStorageFile) {
+        const newTracks = await fetchAudioTracks();
+        setAudioTracks(newTracks);
+      }
+
+      // Ждём, пока видео загрузит метаданные (новый src)
+      const onLoadedMetadata = () => {
+        video.removeEventListener('loadedmetadata', onLoadedMetadata);
+        // Восстанавливаем время
+        if (savedTime && isFinite(savedTime)) {
+          video.currentTime = savedTime;
+        }
+        // Если видео играло, запускаем
+        if (wasPlaying) {
+          video.play().catch(e => console.warn('Play after refresh error', e));
+        }
+        // Восстанавливаем активную дорожку
+        if (savedActiveTrack && audioTracks.length > 0) {
+          const newTrack = audioTracks.find((_, idx) => idx === savedActiveTrack.index);
+          if (newTrack) {
+            const audioEl = audioRefs.current[newTrack.index];
+            if (audioEl) {
+              audioEl.muted = false;
+              if (wasPlaying && audioEl.paused) {
+                audioEl.play().catch(e => console.warn('Audio play after refresh error', e));
+              }
+            }
+          }
+        }
+      };
+      video.addEventListener('loadedmetadata', onLoadedMetadata);
+    } catch (err) {
+      console.error('Failed to refresh video', err);
+      setError('Не удалось восстановить воспроизведение. Обновите страницу.');
+    } finally {
+      isRefreshing.current = false;
+    }
+  };
 
   // Очистка при размонтировании
   useEffect(() => {
@@ -285,7 +361,15 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
 
   if (fileType === 'video' && srcUrl) {
     if (!isStorageFile) {
-      return <video src={srcUrl} controls style={{ width: '100%', height: '100%' }} />;
+      return (
+        <video
+          ref={videoRef}
+          src={srcUrl}
+          controls
+          style={{ width: '100%', height: '100%' }}
+          onError={handleVideoError}
+        />
+      );
     }
 
     return (
@@ -296,6 +380,7 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
           controls
           muted
           className="video-player"
+          onError={handleVideoError}
         />
         {audioTracks.length > 0 && (
           <div className="audio-tracks-list">
