@@ -10,13 +10,13 @@ export function MessengerHeader({
 }) {
   return (
     <div className="window messenger-header">
-      <div className='row'>
+      <div className='row' style={{justifyContent:'space-between'}}>
         <p><strong>{currentConversation.title}</strong></p>
         <button onClick={onClearChat} className="clear-chat-button" title="Удалить все свои сообщения в этом чате">
           🗑️
         </button>
       </div>
-      <div className='row'>
+      <div className='row' style={{justifyContent:'space-between'}}>
         <p>{storageInfo?.message}</p>
         <p className="storage-percentage">Занято {storageInfo?.quota?.percentageUsed || 0}%</p>
       </div>

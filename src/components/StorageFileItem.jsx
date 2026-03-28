@@ -114,10 +114,10 @@ export default function StorageFileItem({ file, userId: propUserId }) {
       )}
       <div className="row">
         <div style={{ fontSize: '48px'}}>{icon}</div>
-		<div className="column" style={{justifyContent:'space-around'}}>
-			<div style={{ fontWeight: 'bold' }}>{name}</div>
-			{size !== undefined && <div style={{ fontSize: '0.8em', color: '#666' }}>{formatSize(size)}</div>}
-		</div>
+        <div className="column space-around">
+          <p style={{ fontWeight: 'bold' }}>{name}</p>
+          {size !== undefined && <p style={{ fontSize: '0.8em', color: '#666' }}>{formatSize(size)}</p>}
+        </div>
       </div>
       <div className="file-actions">
         <button onClick={handleDownload} className="download-btn" disabled={isDownloading}>
