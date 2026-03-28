@@ -127,7 +127,6 @@ export default function StorageFileItem({ file, userId: propUserId }) {
           👁️
         </button>
       </div>
-      <hr />
     </div>
   );
 }
