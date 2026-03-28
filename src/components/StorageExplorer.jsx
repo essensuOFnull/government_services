@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import StorageFileItem from './StorageFileItem';
 
@@ -35,45 +35,71 @@ export default function StorageExplorer() {
     }
   }, [currentPath, user]);
 
+  // Сортировка: сначала папки, потом файлы, по алфавиту
+  const sortedItems = useMemo(() => {
+    const directories = items.filter(item => item.type === 'directory');
+    const files = items.filter(item => item.type === 'file');
+    
+    const sortByName = (a, b) => a.name.localeCompare(b.name);
+    directories.sort(sortByName);
+    files.sort(sortByName);
+    
+    return [...directories, ...files];
+  }, [items]);
+
   const navigateTo = (path) => {
     setCurrentPath(path);
   };
 
-  const handleItemClick = (item) => {
-    if (item.type === 'directory') {
-      navigateTo(item.path);
-    }
+  const goBack = () => {
+    if (!currentPath) return;
+    const parentPath = currentPath.split('/').slice(0, -1).join('/');
+    setCurrentPath(parentPath);
   };
 
   const breadcrumbs = currentPath ? currentPath.split('/').filter(Boolean) : [];
 
   return (
     <div className="storage-explorer">
-      <div className="breadcrumbs">
-        <button onClick={() => navigateTo('')}>Корень</button>
+      <div className="toolbar" style={{ marginBottom: '12px', display: 'flex', gap: '8px' }}>
+        {currentPath && (
+          <button onClick={goBack}>⬅ Назад</button>
+        )}
+        <button onClick={() => navigateTo('')}>📁 Корень</button>
+      </div>
+      <div className="breadcrumbs" style={{ marginBottom: '12px', fontSize: '0.9em' }}>
+        <span>📍 </span>
         {breadcrumbs.map((crumb, idx) => {
           const path = breadcrumbs.slice(0, idx + 1).join('/');
           return (
             <span key={idx}>
-              {' / '}
-              <button onClick={() => navigateTo(path)}>{crumb}</button>
+              {idx > 0 && ' / '}
+              <button 
+                onClick={() => navigateTo(path)} 
+                style={{ background: 'none', border: 'none', color: 'blue', cursor: 'pointer' }}
+              >
+                {crumb}
+              </button>
             </span>
           );
         })}
+        {!currentPath && <span>Корень</span>}
       </div>
 
       {loading && <div>Загрузка...</div>}
-      {error && <div className="error">{error}</div>}
+      {error && <div className="error" style={{ color: 'red' }}>{error}</div>}
 
       {!loading && !error && (
-        <ul className="tree-view">
-          {items.map((item) => (
-            <li key={item.path}>
+        <ul className="tree-view" style={{ listStyle: 'none', padding: 0 }}>
+          {sortedItems.map((item) => (
+            <li key={item.path} style={{ marginBottom: '8px' }}>
               {item.type === 'directory' ? (
-                <details>
-                  <summary onClick={() => handleItemClick(item)}>{item.name}</summary>
-                  {/* Можно сделать вложенную загрузку, но для простоты при клике на папку выше обновляется текущий путь */}
-                </details>
+                <div 
+                  onClick={() => navigateTo(item.path)} 
+                  style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <span>📁</span> {item.name}
+                </div>
               ) : (
                 <StorageFileItem file={item} />
               )}

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useWindowsManager } from '../hooks/useWindowsManager';
 import { useAuth } from '../hooks/useAuth';
-import StorageFileViewer from './StorageFileViewer';
+import FileViewer from './FileViewer';
 
 // Определяем иконку по расширению файла
 function getFileIcon(filename) {
@@ -97,7 +97,7 @@ export default function StorageFileItem({ file, userId: propUserId }) {
   const handleOpen = () => {
     openWindow({
       title: name,
-      children: <StorageFileViewer file={file} />,
+      children: <FileViewer file={file} />,
     });
   };
 
