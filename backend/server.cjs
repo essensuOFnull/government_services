@@ -11,6 +11,8 @@ const bcrypt = require('bcryptjs');
 const { v4: uuid } = require('uuid');
 const selfsigned = require('selfsigned');
 
+const storageRouter = require('./routes/storage.cjs');
+
 const MAX_ATTEMPTS = 10;
 const BLOCK_TIME = 5 * 60 * 1000; // 5 минут
 // Хранилище для IP: { attempts: number, blockedUntil: timestamp }
@@ -540,5 +542,7 @@ async function start() {
     process.exit(1);
   }
 }
+
+app.use('/api/storage', storageRouter);
 
 start();

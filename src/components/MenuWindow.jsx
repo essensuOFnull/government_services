@@ -4,6 +4,8 @@ import { useWindowsManager } from '../hooks/useWindowsManager';
 import { useAuth } from '../hooks/useAuth';
 import DecorDisassembling from './DecorDisassembling';
 import DateCountdown from './DateCountdown.jsx';
+import StorageExplorer from './StorageExplorer';
+
 import {
   loadWallpaperMode,
   saveWallpaperMode,
@@ -94,7 +96,12 @@ export default function MenuWindow({ userId }) {
 
       <div className="window" role="tabpanel" style={{ display: activeTab === 1 ? 'block' : 'none' }}>
         <div className="window-body">
-          <p>Хранилище - в разработке</p>
+          <div style={{ marginBottom: 8 }}>
+            <button onClick={() => openWindow({ title: 'Хранилище', children: <StorageExplorer /> })}>
+              Открыть окно хранилища
+            </button>
+          </div>
+          <StorageExplorer />
         </div>
       </div>
 

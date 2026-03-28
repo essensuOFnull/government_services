@@ -1105,3 +1105,15 @@ select,
     padding:0;
     border-radius:0;
 }
+
+.row,.column{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:flex-start;
+}
+.row{
+    flex-direction:row;
+}
+.column{
+    flex-direction:column;
+}
