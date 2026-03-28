@@ -21,6 +21,38 @@ export function MessageInput({
     }
   };
 
+  const handlePaste = (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    const files = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file) {
+          files.push(file);
+        }
+      }
+    }
+
+    if (files.length > 0) {
+      e.preventDefault(); // предотвращаем вставку текста, если есть файлы
+      const dataTransfer = new DataTransfer();
+      files.forEach((file) => dataTransfer.items.add(file));
+      const fileList = dataTransfer.files;
+
+      // Создаём псевдо-событие для совместимости с существующим onFileUpload
+      const fakeEvent = {
+        target: {
+          files: fileList,
+        },
+      };
+      onFileUpload(fakeEvent);
+    }
+    // Если файлов нет – позволяем вставить текст как обычно
+  };
+
   return (
     <div
       className="window message-input-area field-row-stacked"
@@ -44,6 +76,7 @@ export function MessageInput({
           onTyping();
         }}
         onKeyPress={handleKeyPress}
+        onPaste={handlePaste}
         placeholder="Введите сообщение..."
       />
       <div className="message-actions">
@@ -65,4 +98,5 @@ export function MessageInput({
     </div>
   );
 }
+
 export default MessageInput;
