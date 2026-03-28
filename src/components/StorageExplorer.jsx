@@ -59,6 +59,12 @@ export default function StorageExplorer() {
 
   const breadcrumbs = currentPath ? currentPath.split('/').filter(Boolean) : [];
 
+  // Проверка наличия маркера "роскомпозора" в имени
+  const hasRkpMarker = (name) => name.includes('_rkpnied');
+
+  // Удаление маркера из отображаемого имени
+  const getDisplayName = (name) => name.replace(/_rkpnied/g, '');
+
   return (
     <div className="storage-explorer">
       <div className="toolbar" style={{ marginBottom: '12px', display: 'flex', gap: '8px' }}>
@@ -98,10 +104,32 @@ export default function StorageExplorer() {
                   onClick={() => navigateTo(item.path)} 
                   style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                 >
-                  <span>📁</span> {item.name}
+                  <span>📁</span> {getDisplayName(item.name)}
+                  {hasRkpMarker(item.name) && (
+                    <img
+                      src="/images/rkp.svg"
+                      alt="Роскомпозор"
+                      style={{ width: '16px', height: '16px', marginLeft: '4px' }}
+                      title="Знак качества: заблокировано роскомпозором👍"
+                    />
+                  )}
                 </div>
               ) : (
-                <StorageFileItem file={item} />
+                // Для файлов передаём в StorageFileItem копию объекта с изменённым именем,
+                // чтобы внутри компонента отображалось имя без маркера.
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <StorageFileItem file={{
+                    ...item,
+                    name: getDisplayName(item.name)}} />
+                  {hasRkpMarker(item.name) && (
+                    <img
+                      src="/images/rkp.svg"
+                      alt="Роскомпозор"
+                      style={{ width: '16px', height: '16px' }}
+                      title="Знак качества: заблокировано роскомпозором👍"
+                    />
+                  )}
+                </div>
               )}
             </li>
           ))}
