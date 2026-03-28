@@ -16,6 +16,9 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
   const videoRef = useRef(null);
   const audioRefs = useRef({}); // track.index -> HTMLAudioElement
 
+  // Флаг, разрешающий синхронизацию
+  const syncEnabled = useRef(true);
+
   const getFileType = () => {
     if (isStorageFile) {
       const name = file.name;
@@ -125,13 +128,13 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
     })();
   }, [fileType, isStorageFile, file?.path, srcUrl, userId]);
 
-  // Синхронизация видео и аудио
+  // Синхронизация видео и аудио (с учётом видимости)
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    // Вспомогательная функция: синхронизировать время всех аудио (даже muted)
     const syncTimeToAllAudios = () => {
+      if (!syncEnabled.current) return;
       const currentTime = video.currentTime;
       Object.values(audioRefs.current).forEach(audio => {
         if (Math.abs(audio.currentTime - currentTime) > 0.2) {
@@ -140,8 +143,8 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
       });
     };
 
-    // Запустить все размученные аудио
     const playUnmutedAudios = () => {
+      if (!syncEnabled.current) return;
       Object.values(audioRefs.current).forEach(audio => {
         if (!audio.muted && audio.paused) {
           audio.play().catch(e => console.warn('Audio play error', e));
@@ -149,8 +152,8 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
       });
     };
 
-    // Остановить все размученные аудио
     const pauseUnmutedAudios = () => {
+      if (!syncEnabled.current) return;
       Object.values(audioRefs.current).forEach(audio => {
         if (!audio.muted && !audio.paused) {
           audio.pause();
@@ -158,12 +161,11 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
       });
     };
 
-    // Определить дорожку по умолчанию (русская или первая) и снять с неё mute
     const activateDefaultTrack = () => {
+      if (!syncEnabled.current) return;
       if (audioTracks.length === 0) return;
-      // Проверим, есть ли уже хоть одна размученная дорожка
       const hasUnmuted = Object.values(audioRefs.current).some(audio => !audio.muted);
-      if (hasUnmuted) return; // уже есть активный звук
+      if (hasUnmuted) return;
 
       const defaultIndex = audioTracks.findIndex(track => track.language === 'rus');
       const idx = defaultIndex !== -1 ? defaultIndex : 0;
@@ -171,7 +173,6 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
       const audio = audioRefs.current[track.index];
       if (audio && audio.muted) {
         audio.muted = false;
-        // Если видео уже играет, запускаем
         if (!video.paused) {
           audio.play().catch(e => console.warn('Audio play error', e));
         }
@@ -179,29 +180,27 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
     };
 
     const handlePlay = () => {
-      // При первом воспроизведении активируем дефолтную дорожку
+      if (!syncEnabled.current) return;
       activateDefaultTrack();
-      // Запускаем все размученные аудио
       playUnmutedAudios();
     };
 
     const handlePause = () => {
+      if (!syncEnabled.current) return;
       pauseUnmutedAudios();
     };
 
     const handleSeeked = () => {
+      if (!syncEnabled.current) return;
       syncTimeToAllAudios();
-      // После перемотки убеждаемся, что размученные аудио играют, если видео играет
       if (!video.paused) {
         playUnmutedAudios();
       }
     };
 
     const handleTimeUpdate = () => {
+      if (!syncEnabled.current) return;
       syncTimeToAllAudios();
-      // Если видео играет, а какие-то размученные аудио остановились (например, из-за бага),
-      // запускаем их снова. Это также покрывает случай, когда пользователь размутил дорожку
-      // во время воспроизведения.
       if (!video.paused) {
         playUnmutedAudios();
       }
@@ -218,7 +217,45 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
       video.removeEventListener('seeked', handleSeeked);
       video.removeEventListener('timeupdate', handleTimeUpdate);
     };
-  }, [audioTracks]); // пересоздаём при изменении списка дорожек, чтобы корректно активировать дефолтную
+  }, [audioTracks]); // пересоздаём при изменении списка дорожек
+
+  // Отслеживаем видимость страницы
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Вкладка неактивна — отключаем синхронизацию
+        syncEnabled.current = false;
+      } else {
+        // Вкладка активна — включаем синхронизацию и принудительно синхронизируем видео по аудио
+        syncEnabled.current = true;
+
+        // Находим активную аудиодорожку (не muted и не paused)
+        let activeAudio = null;
+        for (const audio of Object.values(audioRefs.current)) {
+          if (!audio.muted && !audio.paused) {
+            activeAudio = audio;
+            break;
+          }
+        }
+
+        if (activeAudio && videoRef.current) {
+          const video = videoRef.current;
+          const targetTime = activeAudio.currentTime;
+          // Если разница больше 0.2 секунды, синхронизируем
+          if (Math.abs(video.currentTime - targetTime) > 0.2) {
+            video.currentTime = targetTime;
+          }
+          // Если видео на паузе, а активное аудио играет, возможно, стоит запустить видео?
+          // По умолчанию не трогаем, чтобы не нарушать состояние пользователя.
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   // Очистка при размонтировании
   useEffect(() => {
