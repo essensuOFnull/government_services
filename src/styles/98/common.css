@@ -1159,19 +1159,11 @@ select,
   flex-shrink: 0;
   font-size: 0.9rem;
 }
-
-.track-audio {
-  width: 200px;
-}
-.track-audio::-webkit-media-controls-timeline,
-.track-audio::-webkit-media-controls-current-time-display,
-.track-audio::-webkit-media-controls-time-remaining-display,
-.track-audio::-webkit-media-controls-play-button {
-    display: none;
-}
-.track-audio::-webkit-media-controls-volume-slider {
-    display: block;
-}
 .track-separator {
   margin: 4px 0;
+}
+.volume-container{
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }

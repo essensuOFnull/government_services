@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import AudioTrackItem from './AudioTrackItem';
 
 export default function FileViewer({ fileId, fileMeta, file, userId: propUserId }) {
   const { user } = useAuth();
@@ -384,28 +385,12 @@ export default function FileViewer({ fileId, fileMeta, file, userId: propUserId 
         />
         {audioTracks.length > 0 && (
           <div className="audio-tracks-list">
-            {audioTracks.map((track, idx) => {
-              const title = track.title || (track.language === 'rus' ? 'Русский' : track.language === 'jpn' ? 'Японский' : track.language);
-              const bitrate = track.bitrate ? ` (${Math.round(track.bitrate / 1000)} kbps)` : '';
-              return (
-                <React.Fragment key={track.index}>
-                  <div className="audio-track-item">
-                    <div className="track-label">
-                      {title}{bitrate}
-                    </div>
-                    <audio
-                      ref={el => { if (el) audioRefs.current[track.index] = el; }}
-                      src={track.url}
-                      controls
-                      controlsList="nodownload nofullscreen noremoteplayback"
-                      className="track-audio"
-                      muted
-                    />
-                  </div>
-                  {idx < audioTracks.length - 1 && <hr className="track-separator" />}
-                </React.Fragment>
-              );
-            })}
+            {audioTracks.map((track, idx) => (
+              <React.Fragment key={track.index}>
+                <AudioTrackItem track={track} audioRefs={audioRefs} />
+                {idx < audioTracks.length - 1 && <hr className="track-separator" />}
+              </React.Fragment>
+            ))}
           </div>
         )}
       </div>
