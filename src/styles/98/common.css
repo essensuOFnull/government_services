@@ -1160,6 +1160,8 @@ select,
 .track-label {
   flex-shrink: 0;
   font-size: 0.9rem;
+  word-wrap: break-word;
+  max-width:100%;
 }
 .track-separator {
   margin: 4px 0;
