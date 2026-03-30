@@ -10,7 +10,7 @@ echo ========================================
 echo.
 
 :: Генерация сертификатов (если нужно)
-call generate-certs.bat
+call ./auxiliary_scripts/generate-certs.bat
 if %errorlevel% neq 0 (
     echo Ошибка при генерации сертификатов. Запуск прерван.
     pause

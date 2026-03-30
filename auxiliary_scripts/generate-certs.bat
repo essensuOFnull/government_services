@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
-set CERT_DIR=backend\certs
+set CERT_DIR=..\backend\certs
 set KEY_FILE=%CERT_DIR%\key.pem
 set CERT_FILE=%CERT_DIR%\cert.pem
 

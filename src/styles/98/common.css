@@ -232,6 +232,8 @@ input[type="reset"]:disabled,
     color: white;
     letter-spacing: 0;
     margin-right: 24px;
+    max-width:fit-content;
+    overflow:hidden;
 }
 
 .title-bar-controls {
