@@ -27,9 +27,6 @@ export const useAuth = () => {
   };
 
   const login = useCallback(async (username, password, globalPassword) => {
-    if (!globalPassword) {
-      return { success: false, message: 'Необходим глобальный пароль' };
-    }
     try {
       setError(null);
       const response = await api.login(username, password, globalPassword);
@@ -47,9 +44,6 @@ export const useAuth = () => {
   }, []);
 
   const register = useCallback(async (username, password, globalPassword) => {
-    if (!globalPassword) {
-      return { success: false, message: 'Необходим глобальный пароль' };
-    }
     try {
       setError(null);
       const response = await api.register(username, password, globalPassword);

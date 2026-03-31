@@ -30,7 +30,10 @@ User.init({
   total_storage_used: { type: DataTypes.BIGINT, defaultValue: 0 },
   avatar_file_id: { type: DataTypes.STRING },
   created_at: { type: DataTypes.BIGINT },
-  updated_at: { type: DataTypes.BIGINT }
+  updated_at: { type: DataTypes.BIGINT },
+  is_banned: { type: DataTypes.BOOLEAN, defaultValue: false },
+  banned_reason: { type: DataTypes.STRING },
+  banned_at: { type: DataTypes.BIGINT },
 }, { 
   sequelize, 
   modelName: 'User',
@@ -196,6 +199,37 @@ CrossoutResourcePrice.init({
   tableName: 'crossout_resource_prices'
 });
 
+// Модель для банов
+class Ban extends Model {}
+Ban.init({
+  id: { type: DataTypes.STRING, primaryKey: true },
+  type: { type: DataTypes.STRING, allowNull: false }, // 'ip', 'device', 'user'
+  value: { type: DataTypes.STRING, allowNull: false }, // IP, device_id или user_id
+  reason: { type: DataTypes.STRING },
+  created_at: { type: DataTypes.BIGINT, allowNull: false },
+  expires_at: { type: DataTypes.BIGINT }, // null = бессрочно
+  is_active: { type: DataTypes.BOOLEAN, defaultValue: true }
+}, {
+  sequelize,
+  modelName: 'Ban',
+  tableName: 'bans'
+});
+
+// Модель для белого списка
+class Whitelist extends Model {}
+Whitelist.init({
+  id: { type: DataTypes.STRING, primaryKey: true },
+  type: { type: DataTypes.STRING, allowNull: false }, // 'ip', 'device'
+  value: { type: DataTypes.STRING, allowNull: false }, // IP или device_id
+  reason: { type: DataTypes.STRING },
+  created_at: { type: DataTypes.BIGINT, allowNull: false },
+  expires_at: { type: DataTypes.BIGINT } // null = бессрочно
+}, {
+  sequelize,
+  modelName: 'Whitelist',
+  tableName: 'whitelist'
+});
+
 // Связи
 User.hasMany(File, { foreignKey: 'uploader_id', as: 'uploadedFiles' });
 User.hasMany(File, { foreignKey: 'owner_id', as: 'ownedFiles' });
@@ -278,5 +312,7 @@ module.exports = {
   UserStorageQuota,
   MessageRead,
   CrossoutResourcePrice,
+  Ban,
+  Whitelist,
   Op
 };

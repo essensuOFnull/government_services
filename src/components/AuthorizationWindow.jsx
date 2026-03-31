@@ -27,6 +27,8 @@ export default function AuthorizationWindow({ onClose,onGlobalPasswordInvalid, g
 			} else {
 				setLoginError(result.message);
 			}
+		}else {
+			onClose?.(); // закрыть окно
 		}
 	};
 	/*регистрация*/
@@ -78,6 +80,8 @@ export default function AuthorizationWindow({ onClose,onGlobalPasswordInvalid, g
 			} else {
 				setRegisterError(result.message);
 			}
+		}else {
+			onClose?.(); // закрыть окно
 		}
 	};
 	return (
