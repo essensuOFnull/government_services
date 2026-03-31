@@ -10,14 +10,133 @@ const https = require('https');
 const bcrypt = require('bcryptjs');
 const { v4: uuid } = require('uuid');
 const selfsigned = require('selfsigned');
+const { Console } = require('flowprompt');
 
 const storageRouter = require('./routes/storage.cjs');
 
 const MAX_ATTEMPTS = 10;
 const BLOCK_TIME = 5 * 60 * 1000; // 5 минут
-// Хранилище для IP: { attempts: number, blockedUntil: timestamp }
 const attemptsStore = new Map();
 
+// ---------- TUI (flowprompt) ----------
+let tuiConsole = null;
+const logBuffer = [];
+
+// Сохраняем оригинальные методы console для фолбэка
+const originalConsole = {
+  log: console.log,
+  error: console.error,
+  warn: console.warn,
+};
+
+function writeToTUI(...args) {
+  const message = args.join(' ');
+  if (tuiConsole) {
+    tuiConsole.log(message);
+  } else {
+    logBuffer.push(message);
+  }
+}
+
+// Переопределяем console для вывода в TUI или буфер
+console.log = writeToTUI;
+console.error = writeToTUI;
+console.warn = writeToTUI;
+
+// Функция для вывода накопленных логов после запуска TUI
+function flushLogBuffer() {
+  if (tuiConsole && logBuffer.length) {
+    for (const msg of logBuffer) {
+      tuiConsole.log(msg);
+    }
+    logBuffer.length = 0;
+  }
+}
+
+function initTUI() {
+  if (!process.stdin.isTTY) {
+    originalConsole.log('⚠️  TUI не доступен (не интерактивный терминал).');
+    return;
+  }
+
+  tuiConsole = new Console({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: '> ',
+    encoding: 'utf8',
+  });
+
+  tuiConsole.log('✨ Интерактивная консоль сервера запущена. Введите help для справки.');
+
+  // Обработка команд
+  tuiConsole.on('line', (command) => {
+    handleCommand(command);
+    // Приглашение показывается автоматически
+  });
+
+  // Автодополнение
+  const commandsList = [
+    'help',
+    'ban ip', 'ban user by', 'ban devices by', 'ban list',
+    'unban ip', 'unban user by', 'unban devices by',
+    'whitelist ip', 'whitelist devices by', 'whitelist list',
+    'unwhitelist ip', 'unwhitelist devices by',
+    'get user info by',
+  ];
+
+  tuiConsole.on('autocomplete', ({ line, pos, callback }) => {
+    const lastSpace = line.lastIndexOf(' ', pos - 1);
+    const wordStart = lastSpace + 1;
+    const currentWord = line.slice(wordStart, pos);
+    const hits = commandsList.filter(cmd => cmd.startsWith(currentWord));
+    const completions = hits.map(hit => ({
+      line: line.slice(0, wordStart) + hit + line.slice(pos),
+      pos: wordStart + hit.length,
+    }));
+    callback(completions);
+  });
+
+  tuiConsole.on('SIGINT', () => {
+    originalConsole.log('\nЗавершение работы сервера...');
+    process.exit(0);
+  });
+}
+
+// ---------- Команды ----------
+function handleCommand(cmd) {
+  const parts = cmd.trim().split(/\s+/);
+  const mainCmd = parts[0].toLowerCase();
+  const args = parts.slice(1);
+
+  switch (mainCmd) {
+    case 'help':
+      showHelp();
+      break;
+    default:
+      writeToTUI(`❓ Неизвестная команда "${mainCmd}". Введите "help" для списка команд.`);
+      break;
+  }
+}
+
+function showHelp() {
+  writeToTUI('📚 Доступные команды:');
+  writeToTUI('  help - показать эту справку');
+  writeToTUI('  ban ip <ip> - заблокировать IP');
+  writeToTUI('  ban user by username/id <username/id> - заблокировать пользователя');
+  writeToTUI('  ban devices by username/id/ip <username/id/ip> - заблокировать устройства');
+  writeToTUI('  ban list - показать список заблокированных');
+  writeToTUI('  unban ip <ip> - разблокировать IP');
+  writeToTUI('  unban user by username/id <username/id> - разблокировать пользователя');
+  writeToTUI('  unban devices by username/id/ip <username/id/ip> - разблокировать устройства');
+  writeToTUI('  whitelist ip <ip> - добавить IP в белый список');
+  writeToTUI('  whitelist devices by username/id/ip <username/id/ip> - добавить устройства');
+  writeToTUI('  whitelist list - показать белый список');
+  writeToTUI('  unwhitelist ip <ip> - удалить IP из белого списка');
+  writeToTUI('  unwhitelist devices by username/id/ip <username/id/ip> - удалить устройства');
+  writeToTUI('  get user info by username/id <username/id> - получить информацию о пользователе');
+}
+
+// ---------- Остальной код сервера ----------
 const GLOBAL_PASSWORD_HASH = process.env.GLOBAL_PASSWORD_HASH;
 if (!GLOBAL_PASSWORD_HASH) {
   console.error('❌ GLOBAL_PASSWORD_HASH не задан в .env');
@@ -25,7 +144,7 @@ if (!GLOBAL_PASSWORD_HASH) {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    terminal: true   // важно для поддержки вставки
+    terminal: true
   });
 
   rl.question('Введите глобальный пароль (будет сгенерирован хеш) (для вставки из буфера обмена нажмите правую кнопку мыши): ', (password) => {
@@ -39,7 +158,7 @@ if (!GLOBAL_PASSWORD_HASH) {
     console.log('Добавьте эту строку в .env и перезапустите сервер.');
     process.exit(0);
   });
-  return; // не продолжаем запуск сервера
+  return;
 }
 
 async function checkGlobalPassword(plainPassword) {
@@ -52,7 +171,6 @@ async function checkGlobalPassword(plainPassword) {
   }
 }
 
-// Импорт Sequelize моделей
 const {
   User,
   LoginAttempt,
@@ -69,13 +187,11 @@ const app = express();
 const PORT = process.env.PORT || 22869;
 const isDev = process.env.NODE_ENV !== 'production';
 
-// Функция для получения или создания самоподписанного сертификата
 function getOrCreateCert() {
   const certDir = path.join(__dirname, 'certs');
   const keyPath = path.join(certDir, 'key.pem');
   const certPath = path.join(certDir, 'cert.pem');
 
-  // Если сертификаты уже существуют, используем их
   if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
     console.log('📁 Используем существующие сертификаты');
     return {
@@ -84,7 +200,6 @@ function getOrCreateCert() {
     };
   }
 
-  // Пытаемся сгенерировать новый самоподписанный сертификат
   console.log('🔐 Генерируем самоподписанный сертификат...');
   try {
     const attrs = [{ name: 'commonName', value: 'localhost' }];
@@ -94,12 +209,10 @@ function getOrCreateCert() {
       throw new Error('Не удалось сгенерировать сертификат: pems.private или pems.cert отсутствует');
     }
 
-    // Создаём директорию, если её нет
     if (!fs.existsSync(certDir)) {
       fs.mkdirSync(certDir, { recursive: true });
     }
 
-    // Сохраняем сертификаты для будущих запусков
     fs.writeFileSync(keyPath, pems.private);
     fs.writeFileSync(certPath, pems.cert);
 
@@ -115,7 +228,6 @@ function getOrCreateCert() {
   }
 }
 
-// Middleware
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:22869',
   credentials: true
@@ -124,7 +236,6 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Лимитер для аутентификации
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -137,23 +248,18 @@ app.use('/api/register', authLimiter);
 app.use('/api/change-password', authLimiter);
 app.use('/api/change-username', authLimiter);
 
-// Логирование
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
 
-// Инициализация базы данных
 app.use(async (req, res, next) => {
   try {
     await initializeDatabase();
     next();
   } catch (error) {
     console.error('Database initialization error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Database initialization failed'
-    });
+    res.status(500).json({ success: false, message: 'Database initialization failed' });
   }
 });
 
@@ -198,29 +304,20 @@ app.post('/api/verify-global-password', async (req, res) => {
   }
 });
 
-// Маршруты аутентификации
 app.post('/api/register', async (req, res) => {
   try {
     const { username, password, globalPassword } = req.body;
-    // Проверка глобального пароля
     if (!await checkGlobalPassword(globalPassword)) {
       return res.status(403).json({ success: false, message: 'Неверный глобальный пароль' });
     }
-    const ip = req.ip || req.connection.remoteAddress;
 
     if (!username || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Имя пользователя и пароль обязательны'
-      });
+      return res.status(400).json({ success: false, message: 'Имя пользователя и пароль обязательны' });
     }
 
     const existingUser = await User.findOne({ where: { username } });
     if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: 'Пользователь с таким именем уже существует'
-      });
+      return res.status(400).json({ success: false, message: 'Пользователь с таким именем уже существует' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -250,34 +347,23 @@ app.post('/api/register', async (req, res) => {
     const userResponse = user.toJSON();
     delete userResponse.password;
 
-    res.status(201).json({
-      success: true,
-      user: userResponse,
-      message: 'Регистрация успешна'
-    });
+    res.status(201).json({ success: true, user: userResponse, message: 'Регистрация успешна' });
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Ошибка при регистрации'
-    });
+    res.status(500).json({ success: false, message: 'Ошибка при регистрации' });
   }
 });
 
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password, globalPassword } = req.body;
-    // Проверка глобального пароля
     if (!await checkGlobalPassword(globalPassword)) {
       return res.status(403).json({ success: false, message: 'Неверный глобальный пароль' });
     }
     const ip = req.ip || req.connection.remoteAddress;
 
     if (!username || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Имя пользователя и пароль обязательны'
-      });
+      return res.status(400).json({ success: false, message: 'Имя пользователя и пароль обязательны' });
     }
 
     const user = await User.findOne({ where: { username } });
@@ -289,10 +375,7 @@ app.post('/api/login', async (req, res) => {
         username,
         created_at: Date.now()
       }).catch(e => console.error('Failed to log login attempt:', e));
-      return res.status(401).json({
-        success: false,
-        message: 'Неверное имя пользователя или пароль'
-      });
+      return res.status(401).json({ success: false, message: 'Неверное имя пользователя или пароль' });
     }
 
     const isValidPassword = await bcrypt.compare(password, user.password);
@@ -304,10 +387,7 @@ app.post('/api/login', async (req, res) => {
         username,
         created_at: Date.now()
       }).catch(e => console.error('Failed to log login attempt:', e));
-      return res.status(401).json({
-        success: false,
-        message: 'Неверное имя пользователя или пароль'
-      });
+      return res.status(401).json({ success: false, message: 'Неверное имя пользователя или пароль' });
     }
 
     await LoginAttempt.create({
@@ -327,17 +407,10 @@ app.post('/api/login', async (req, res) => {
     const userResponse = user.toJSON();
     delete userResponse.password;
 
-    res.json({
-      success: true,
-      user: userResponse,
-      message: 'Вход выполнен успешно'
-    });
+    res.json({ success: true, user: userResponse, message: 'Вход выполнен успешно' });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Ошибка при входе'
-    });
+    res.status(500).json({ success: false, message: 'Ошибка при входе' });
   }
 });
 
@@ -345,10 +418,7 @@ app.post('/api/change-username', async (req, res) => {
   try {
     const { id, newUsername } = req.body;
     if (!id || !newUsername) {
-      return res.status(400).json({
-        success: false,
-        message: 'Требуется ID пользователя и новое имя'
-      });
+      return res.status(400).json({ success: false, message: 'Требуется ID пользователя и новое имя' });
     }
 
     const existingUser = await User.findOne({
@@ -358,10 +428,7 @@ app.post('/api/change-username', async (req, res) => {
       }
     });
     if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: 'Это имя пользователя уже занято'
-      });
+      return res.status(400).json({ success: false, message: 'Это имя пользователя уже занято' });
     }
 
     await User.update(
@@ -369,16 +436,10 @@ app.post('/api/change-username', async (req, res) => {
       { where: { id } }
     );
 
-    res.json({
-      success: true,
-      message: 'Имя пользователя изменено'
-    });
+    res.json({ success: true, message: 'Имя пользователя изменено' });
   } catch (error) {
     console.error('Change username error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Ошибка при изменении имени пользователя'
-    });
+    res.status(500).json({ success: false, message: 'Ошибка при изменении имени пользователя' });
   }
 });
 
@@ -386,10 +447,7 @@ app.post('/api/change-password', async (req, res) => {
   try {
     const { id, newPassword } = req.body;
     if (!id || !newPassword) {
-      return res.status(400).json({
-        success: false,
-        message: 'Требуется ID пользователя и новый пароль'
-      });
+      return res.status(400).json({ success: false, message: 'Требуется ID пользователя и новый пароль' });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -398,16 +456,10 @@ app.post('/api/change-password', async (req, res) => {
       { where: { id } }
     );
 
-    res.json({
-      success: true,
-      message: 'Пароль изменен'
-    });
+    res.json({ success: true, message: 'Пароль изменен' });
   } catch (error) {
     console.error('Change password error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Ошибка при изменении пароля'
-    });
+    res.status(500).json({ success: false, message: 'Ошибка при изменении пароля' });
   }
 });
 
@@ -418,37 +470,22 @@ app.get('/api/user/:id', async (req, res) => {
       attributes: { exclude: ['password'] }
     });
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Пользователь не найден'
-      });
+      return res.status(404).json({ success: false, message: 'Пользователь не найден' });
     }
-    res.json({
-      success: true,
-      user
-    });
+    res.json({ success: true, user });
   } catch (error) {
     console.error('Get user error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Ошибка сервера'
-    });
+    res.status(500).json({ success: false, message: 'Ошибка сервера' });
   }
 });
 
-// API маршруты мессенджера
 app.use('/api/messenger', messengerRoutes);
 
-// Обработка ошибок
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({
-    success: false,
-    message: 'Внутренняя ошибка сервера'
-  });
+  res.status(500).json({ success: false, message: 'Внутренняя ошибка сервера' });
 });
 
-// Инициализация сервера
 async function start() {
   try {
     await initializeDatabase();
@@ -480,11 +517,11 @@ async function start() {
         server: { middlewareMode: true },
         appType: 'spa'
       });
-      
+
       console.log('📦 Vite сервер инициализирован');
-      
+
       app.use(viteServer.middlewares);
-      
+
       app.use('*', async (req, res) => {
         const path_url = req.path;
         if (/\.\w+$/.test(path_url)) {
@@ -506,7 +543,7 @@ async function start() {
         res.sendFile(path.resolve(__dirname, '../dist', 'index.html'));
       });
     }
-    
+
     app.get('/api/s3/:bucket/*', (req, res) => {
       try {
         const bucket = req.params.bucket;
@@ -537,6 +574,10 @@ async function start() {
       }
       console.log(`${'='.repeat(50)}\n`);
     });
+
+    // Запускаем TUI после того, как сервер начал слушать
+    initTUI();
+    flushLogBuffer();
   } catch (error) {
     console.error('Ошибка при запуске сервера:', error);
     process.exit(1);
