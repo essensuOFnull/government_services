@@ -764,6 +764,42 @@ router.post('/conversation/create', authenticateUser, async (req, res) => {
           participant_id: participantId
         });
       }
+
+      // --- НОВЫЙ КОД: уведомляем всех участников ---
+      const wsServer = req.app.get('wsServer');
+      if (wsServer && typeof wsServer.broadcastToUser === 'function') {
+        // Собираем данные, аналогичные тем, что возвращает GET /conversations
+        const participantIds = sortedIds;
+        const otherParticipants = participantIds.filter(pid => pid !== req.user.id);
+        let title = 'Избранное';
+        if (otherParticipants.length > 0) {
+          if (otherParticipants.length === 1) {
+            const user = await User.findByPk(otherParticipants[0]);
+            title = user ? user.username : otherParticipants[0];
+          } else {
+            title = `Группа (${otherParticipants.length + 1})`;
+          }
+        }
+
+        const conversationData = {
+          id: conversation.id,
+          created_at: conversation.created_at,
+          last_message_at: conversation.last_message_at,
+          participantIds,
+          title,
+          otherParticipants
+        };
+
+        // Отправляем всем участникам, кроме инициатора
+        for (const pid of participantIds) {
+          if (pid !== req.user.id) {
+            wsServer.broadcastToUser(pid, {
+              type: 'new_conversation',
+              conversation: conversationData
+            });
+          }
+        }
+      }
     }
 
     res.json({
