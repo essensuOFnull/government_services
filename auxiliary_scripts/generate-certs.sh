@@ -3,7 +3,7 @@
 # Отключаем авто-завершение при ошибках (чтобы обработать вручную)
 set +e
 
-CERT_DIR="../backend/certs"
+CERT_DIR="./backend/certs"
 KEY_FILE="${CERT_DIR}/key.pem"
 CERT_FILE="${CERT_DIR}/cert.pem"
 

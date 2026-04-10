@@ -15,7 +15,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # Запуск сервера
-node backend/server.cjs
+node ./backend/server.cjs
 
 # Пауза перед закрытием терминала (аналог pause в Windows)
 read -p "Нажмите Enter для выхода..."
