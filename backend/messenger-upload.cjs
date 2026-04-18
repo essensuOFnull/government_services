@@ -1,9 +1,11 @@
-require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+
+const configPath = path.resolve(__dirname, '../config.json');
+const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
 const multer = require('multer');
 const mime = require('mime-types');
-const fs = require('fs');
-const path = require('path');
 const { v4: uuid } = require('uuid');
 
 // Импорт Sequelize моделей
@@ -13,7 +15,7 @@ const {
   UserStorageQuota
 } = require('./database.cjs');
 
-const uploadsDir = process.env.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
+const uploadsDir = config.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
 
 // Создаем директорию для загрузок если её нет
 if (!fs.existsSync(uploadsDir)) {

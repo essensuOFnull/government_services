@@ -1,9 +1,11 @@
-require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+
+const configPath = path.resolve(__dirname, '../config.json');
+const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
 const express = require('express');
 const { v4: uuid } = require('uuid');
-const fs = require('fs');
-const path = require('path');
 
 const router = express.Router();
 
@@ -39,7 +41,7 @@ const {
   handleMulterError
 } = require('./messenger-upload.cjs');
 
-const uploadsDir = process.env.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
+const uploadsDir = config.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
 
 // Простые одноразовые/временные токены предпросмотра (in-memory)
 const previewTokens = new Map(); // token -> { fileId, userId, expiresAt }

@@ -1,10 +1,12 @@
-require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+
+const configPath = path.resolve(__dirname, '../config.json');
+const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
-const path = require('path');
-const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const bcrypt = require('bcryptjs');
@@ -312,7 +314,7 @@ function showHelp() {
 }
 
 // ---------- Остальной код сервера ----------
-const GLOBAL_PASSWORD_HASH = process.env.GLOBAL_PASSWORD_HASH;
+const GLOBAL_PASSWORD_HASH = config.GLOBAL_PASSWORD_HASH;
 if (!GLOBAL_PASSWORD_HASH) {
   console.error('❌ GLOBAL_PASSWORD_HASH не задан в .env');
   const readline = require('readline');
@@ -361,8 +363,8 @@ const MessengerWebSocketServer = require('./messenger-websocket.cjs');
 const storageManager = require('./messenger-storage.cjs');
 
 const app = express();
-const PORT = process.env.PORT || 22869;
-const isDev = process.env.NODE_ENV !== 'production';
+const PORT = config.PORT || 22869;
+const isDev = config.NODE_ENV !== 'production';
 
 // Нормализация IP (IPv6 localhost -> 127.0.0.1)
 function normalizeIp(ip) {
@@ -440,7 +442,7 @@ function getOrCreateCert() {
   }
 }
 
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:22869', credentials: true }));
+app.use(cors({ origin: config.FRONTEND_URL || 'http://localhost:22869', credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.get('/api/global-password-required', async (req, res) => {
   try {
@@ -688,7 +690,7 @@ async function start() {
     storageManager.startCleanupScheduler();
     console.log('✅ Планировщик очистки файлов запущен');
 
-    const useHttps = process.env.USE_HTTPS === 'true';
+    const useHttps = config.USE_HTTPS === 'false';
     let server;
     if (useHttps) {
       const { key, cert } = getOrCreateCert();
@@ -736,7 +738,7 @@ async function start() {
       try {
         const bucket = req.params.bucket;
         const key = req.params[0];
-        const s3Base = process.env.S3_DATA_DIR || path.resolve(__dirname, '../data/s3');
+        const s3Base = config.S3_DATA_DIR || path.resolve(__dirname, '../data/s3');
         const filePath = path.join(s3Base, bucket, key);
         if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, message: 'Not found' });
         res.sendFile(filePath);

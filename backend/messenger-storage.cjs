@@ -1,8 +1,10 @@
-require('dotenv').config();
-
-const schedule = require('node-schedule');
 const fs = require('fs');
 const path = require('path');
+
+const configPath = path.resolve(__dirname, '../config.json');
+const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+
+const schedule = require('node-schedule');
 
 // Импорт Sequelize моделей
 const {
@@ -15,7 +17,7 @@ const {
 
 const s3Service = require('./messenger-s3.cjs');
 
-const uploadsDir = process.env.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
+const uploadsDir = config.UPLOAD_DIR || path.join(__dirname, '../data/uploads');
 
 class StorageManager {
   constructor() {

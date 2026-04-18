@@ -1,9 +1,12 @@
 // Новый backend на Sequelize
-require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+
+const configPath = path.resolve(__dirname, '../config.json');
+const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
 const { Sequelize, DataTypes, Op, Model } = require('sequelize');
-const path = require('path');
-const DB_PATH = process.env.DATABASE_PATH || path.resolve(__dirname, '../data/app.db');
+const DB_PATH = config.DATABASE_PATH || path.resolve(__dirname, '../data/app.db');
 
 const sequelize = new Sequelize({
   dialect: 'sqlite',

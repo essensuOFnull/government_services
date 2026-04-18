@@ -1,9 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 
-const BUCKET_NAME = process.env.S3_BUCKET || 'messenger-files';
-const EMBED_S3 = process.env.EMBED_S3 === 'true' || true; // по умолчанию встроенный адаптер
-const STORAGE_DIR = process.env.S3_DATA_DIR || path.resolve(__dirname, '../data/s3');
+const configPath = path.resolve(__dirname, '../config.json');
+const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+
+const BUCKET_NAME = config.S3_BUCKET || 'messenger-files';
+const EMBED_S3 = config.EMBED_S3 === 'true' || true; // по умолчанию встроенный адаптер
+const STORAGE_DIR = config.S3_DATA_DIR || path.resolve(__dirname, '../data/s3');
 
 if (!fs.existsSync(STORAGE_DIR)) {
   fs.mkdirSync(STORAGE_DIR, { recursive: true });

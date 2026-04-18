@@ -13,7 +13,10 @@ const readFile = promisify(fs.readFile);
 const copyFile = promisify(fs.copyFile);
 const mkdir = promisify(fs.mkdir);
 
-const STORAGE_ROOT = path.resolve(process.env.STORAGE_ROOT || './storage');
+const configPath = path.resolve(__dirname, '../../config.json');
+const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+
+const STORAGE_ROOT = path.resolve(config.STORAGE_ROOT || './storage');
 const HLS_CACHE_DIR = path.join(__dirname, '../hls_cache');
 
 // Хранилища токенов
